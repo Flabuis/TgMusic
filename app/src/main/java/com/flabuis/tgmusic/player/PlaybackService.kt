@@ -26,6 +26,7 @@ import com.flabuis.tgmusic.data.Settings
 import com.flabuis.tgmusic.td.TgDataSource
 import com.flabuis.tgmusic.ui.ImageCache
 import com.flabuis.tgmusic.ui.MainActivity
+import com.flabuis.tgmusic.widget.WidgetState
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.Job
@@ -56,11 +57,13 @@ class PlaybackService : MediaSessionService() {
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (!isPlaying) BassMeter.reset()
+            refreshWidget()
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             val p = session?.player as? ExoPlayer ?: return
             mediaItem?.let { loadArtwork(p, it) }
+            refreshWidget()
         }
     }
 
@@ -241,6 +244,35 @@ class PlaybackService : MediaSessionService() {
         return if (order.size == timeline.windowCount) order.toIntArray() else IntArray(timeline.windowCount) { it }
     }
 
+    // ---------- Home screen widget ----------
+
+    private var widgetJob: Job? = null
+
+    /** Tells the widget what's playing (title, cover, play/pause). */
+    private fun refreshWidget() {
+        val p = session?.player ?: return
+        val item = p.currentMediaItem ?: return
+        val meta = item.mediaMetadata
+        val playing = p.isPlaying || (p.playWhenReady && p.playbackState == Player.STATE_BUFFERING)
+        widgetJob?.cancel()
+        widgetJob = scope.launch {
+            val cover = meta.artworkUri?.path
+                ?: (meta.extras?.getInt(EXTRA_COVER_SMALL) ?: 0).takeIf { it != 0 }?.let { id ->
+                    try { ImageCache.path(id) } catch (e: Exception) { null }
+                }
+            try {
+                WidgetState.update(
+                    this@PlaybackService,
+                    title = meta.title?.toString() ?: "TgMusic",
+                    artist = meta.artist?.toString() ?: "",
+                    playing = playing,
+                    coverPath = cover,
+                )
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     // ---------- Artwork ----------
 
     /** Puts the album cover into the notification / lock screen once it's downloaded. */
@@ -262,6 +294,7 @@ class PlaybackService : MediaSessionService() {
                             current.mediaMetadata.buildUpon().setArtworkUri(Uri.fromFile(File(path))).build()
                         ).build()
                     )
+                    refreshWidget()
                     break
                 }
             }
