@@ -295,28 +295,16 @@ private fun IdleScreen(onWake: () -> Unit, enterModifier: Modifier) {
     val pos by rememberPosition()
     val context = LocalContext.current
 
-    // Real dimming: lower the brightness and keep the screen on while music plays.
+    // Screen brightness stays as it is; only keep the screen awake while music plays.
     DisposableEffect(s.isPlaying) {
         val window = (context as? Activity)?.window
-        window?.let {
-            val attrs = it.attributes
-            attrs.screenBrightness = 0.12f
-            it.attributes = attrs
-            if (s.isPlaying) it.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
-        onDispose {
-            window?.let {
-                val attrs = it.attributes
-                attrs.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-                it.attributes = attrs
-                it.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            }
-        }
+        if (s.isPlaying) window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
     Box(
         Modifier.fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.96f))
+            .background(Color.Black)
             // Swallow every touch so nothing underneath reacts; wake up when the finger lifts.
             .pointerInput(Unit) {
                 awaitPointerEventScope {
