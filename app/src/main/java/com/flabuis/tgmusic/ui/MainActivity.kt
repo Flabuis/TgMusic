@@ -81,7 +81,7 @@ private fun Root() {
             MessageScreen("На этот номер нет аккаунта Telegram. Сначала зарегистрируйся в обычном клиенте.")
         is TdApi.AuthorizationStateWaitOtherDeviceConfirmation ->
             MessageScreen("Подтверди вход на другом устройстве")
-        is TdApi.AuthorizationStateReady -> MainApp()
+        is TdApi.AuthorizationStateReady -> IdleOverlay { MainApp() }
         is TdApi.AuthorizationStateLoggingOut -> LoadingScreen("Выходим…")
         else -> LoadingScreen()
     }

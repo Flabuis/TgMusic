@@ -3,6 +3,7 @@ package com.flabuis.tgmusic
 import android.app.Application
 import com.flabuis.tgmusic.data.Downloads
 import com.flabuis.tgmusic.data.Library
+import com.flabuis.tgmusic.data.Lyrics
 import com.flabuis.tgmusic.data.Settings
 import kotlinx.coroutines.MainScope
 import com.flabuis.tgmusic.td.ApiConfig
@@ -16,5 +17,6 @@ class TgMusicApp : Application() {
         Settings.init(this)
         Td.init(this)
         Downloads.observe(MainScope())
+        Lyrics.start(this, MainScope())
     }
 }

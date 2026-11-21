@@ -44,5 +44,9 @@ object AppIcons {
     )
     val Delete = icon("Delete", "M6,19c0,1.1 0.9,2 2,2h8c1.1,0 2,-0.9 2,-2V7H6v12zM19,4h-3.5l-1,-1h-5l-1,1H5v2h14V4z")
     val RemoveQueue = icon("RemoveQueue", "M14,10H3v2h11v-2zM14,6H3v2h11V6zM3,16h7v-2H3v2zM14.41,22L17,19.41 19.59,22 21,20.59 18.41,18 21,15.41 19.59,14 17,16.59 14.41,14 13,15.41 15.59,18 13,20.59z")
+    val Lyrics = icon(
+        "Lyrics",
+        "M20,2H4C2.9,2 2,2.9 2,4v18l4,-4h14c1.1,0 2,-0.9 2,-2V4C22,2.9 21.1,2 20,2zM6,9h12v2H6V9zM14,14H6v-2h8V14zM18,8H6V6h12V8z"
+    )
     val Down = icon("Down", "M7.41,8.59L12,13.17l4.59,-4.58L18,10l-6,6 -6,-6 1.41,-1.41z")
 }

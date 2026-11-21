@@ -81,6 +81,7 @@ dependencies {
     implementation("androidx.annotation:annotation:1.9.1")
 
     implementation("sh.calvin.reorderable:reorderable:2.4.3")
+    implementation("androidx.palette:palette-ktx:1.0.0")
 
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-session:1.5.1")

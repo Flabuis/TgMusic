@@ -123,6 +123,7 @@ private sealed interface Screen {
     data class Playlist(val channel: Channel) : Screen
     data object NowPlaying : Screen
     data object Settings : Screen
+    data object Lyrics : Screen
 }
 
 @Composable
@@ -143,9 +144,9 @@ fun MainApp() {
         AnimatedContent(
             targetState = current,
             transitionSpec = {
-                if (targetState == Screen.NowPlaying) {
+                if (targetState == Screen.NowPlaying || targetState == Screen.Lyrics) {
                     (slideInVertically { it / 3 } + fadeIn()) togetherWith fadeOut()
-                } else if (initialState == Screen.NowPlaying) {
+                } else if (initialState == Screen.NowPlaying || initialState == Screen.Lyrics) {
                     fadeIn() togetherWith (slideOutVertically { it / 3 } + fadeOut())
                 } else {
                     (slideInHorizontally { it / 5 } + fadeIn()) togetherWith fadeOut()
@@ -162,11 +163,12 @@ fun MainApp() {
                 )
                 Screen.Picker -> PickerScreen(onDone = pop)
                 is Screen.Playlist -> PlaylistScreen(screen.channel, onBack = pop)
-                Screen.NowPlaying -> NowPlayingScreen(onClose = pop)
+                Screen.NowPlaying -> NowPlayingScreen(onClose = pop, onLyrics = { push(Screen.Lyrics) })
                 Screen.Settings -> SettingsScreen(onBack = pop)
+                Screen.Lyrics -> LyricsScreen(onClose = pop)
             }
         }
-        if (current != Screen.NowPlaying) MiniPlayer(onOpen = { push(Screen.NowPlaying) })
+        if (current != Screen.NowPlaying && current != Screen.Lyrics) MiniPlayer(onOpen = { push(Screen.NowPlaying) })
     }
 }
 
@@ -728,7 +730,7 @@ private fun TrackRow(
 // ---------- Player ----------
 
 @Composable
-private fun rememberPosition(): State<Long> {
+internal fun rememberPosition(): State<Long> {
     val pos = remember { mutableLongStateOf(PlayerConnection.positionMs) }
     LaunchedEffect(Unit) {
         // Every frame: the controller estimates the position between updates, so it moves smoothly.
@@ -821,7 +823,7 @@ private fun PlayPauseButton(isPlaying: Boolean, isBuffering: Boolean, size: Int)
 }
 
 @Composable
-private fun NowPlayingScreen(onClose: () -> Unit) {
+private fun NowPlayingScreen(onClose: () -> Unit, onLyrics: () -> Unit) {
     val s by PlayerConnection.state.collectAsState()
     val pos by rememberPosition()
     var dragging by remember { mutableStateOf<Float?>(null) }
@@ -851,7 +853,9 @@ private fun NowPlayingScreen(onClose: () -> Unit) {
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.labelLargeEmphasized,
                 )
-                Spacer(Modifier.width(48.dp))
+                IconButton(onClick = onLyrics, shapes = IconButtonDefaults.shapes()) {
+                    Icon(AppIcons.Lyrics, "Текст песни")
+                }
             }
             Spacer(Modifier.height(12.dp))
             Box(
@@ -1076,7 +1080,7 @@ private fun TopBar(title: String, onBack: (() -> Unit)? = null, actions: @Compos
 
 /** Placeholder when there's no picture: a color from the name and the first letter. */
 @Composable
-private fun LetterCover(seed: String, modifier: Modifier, small: Boolean = false) {
+internal fun LetterCover(seed: String, modifier: Modifier, small: Boolean = false) {
     val scheme = MaterialTheme.colorScheme
     val palette = listOf(
         scheme.primaryContainer to scheme.onPrimaryContainer,
