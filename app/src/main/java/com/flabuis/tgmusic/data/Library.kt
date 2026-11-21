@@ -121,6 +121,14 @@ object Library {
         return result
     }
 
+    /** Deletes the message with the track from the Telegram chat itself. */
+    suspend fun deleteTrack(track: Track) {
+        Td.send(TdApi.DeleteMessages(track.chatId, longArrayOf(track.messageId), true))
+        val left = trackCache[track.chatId].orEmpty().filter { it.messageId != track.messageId }
+        trackCache[track.chatId] = left
+        if (hasCustomOrder(track.chatId)) saveOrder(track.chatId, left)
+    }
+
     // ----- custom order (drag & drop) -----
 
     private fun orderPrefs() = ctx.getSharedPreferences("order", Context.MODE_PRIVATE)

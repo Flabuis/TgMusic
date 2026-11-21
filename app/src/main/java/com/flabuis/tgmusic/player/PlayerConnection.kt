@@ -42,6 +42,22 @@ object PlayerConnection {
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = update()
+
+        override fun onPositionDiscontinuity(
+            oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo,
+            reason: Int,
+        ) {
+            if (reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION) {
+                // "Repeat once": the track has played its extra time, restore the old repeat mode.
+                val restore = repeatOnceRestore
+                if (restore != null && oldPosition.mediaItemIndex == newPosition.mediaItemIndex) {
+                    repeatOnceRestore = null
+                    controller?.repeatMode = restore
+                }
+                direction = 1
+            }
+        }
         override fun onPlayerError(error: PlaybackException) {
             _state.value = _state.value.copy(error = error.cause?.message ?: error.message)
         }
@@ -104,11 +120,44 @@ object PlayerConnection {
         if (c.isPlaying) c.pause() else c.play()
     }
 
-    fun next() = withController { it.seekToNextMediaItem() }
-    fun previous() = withController { it.seekToPrevious() }
+    /** Which way the last track change went: 1 = forward, -1 = back. Used for animations. */
+    @Volatile var direction = 1
+        private set
+
+    private var repeatOnceRestore: Int? = null
+
+    fun next() = withController { direction = 1; it.seekToNextMediaItem() }
+    fun previous() = withController { direction = -1; it.seekToPrevious() }
+
+    fun isInQueue(mediaId: String): Boolean {
+        val c = controller ?: return false
+        return (0 until c.mediaItemCount).any { c.getMediaItemAt(it).mediaId == mediaId }
+    }
+
+    /** Puts the track right after the current one. */
+    fun playNext(track: Track) = withController { c ->
+        if (c.mediaItemCount == 0) {
+            playQueue(listOf(track), 0)
+        } else {
+            c.addMediaItem(c.currentMediaItemIndex + 1, track.toMediaItem())
+        }
+    }
+
+    /** Plays the current track one more time, then goes on as before. */
+    fun repeatCurrentOnce() = withController { c ->
+        if (repeatOnceRestore == null) repeatOnceRestore = c.repeatMode
+        c.repeatMode = Player.REPEAT_MODE_ONE
+    }
+
+    fun removeFromQueue(mediaId: String) = withController { c ->
+        for (i in c.mediaItemCount - 1 downTo 0) {
+            if (c.getMediaItemAt(i).mediaId == mediaId) c.removeMediaItem(i)
+        }
+    }
     fun seekTo(ms: Long) = withController { it.seekTo(ms) }
     fun toggleShuffle() = withController { it.shuffleModeEnabled = !it.shuffleModeEnabled }
     fun cycleRepeat() = withController {
+        repeatOnceRestore = null
         it.repeatMode = when (it.repeatMode) {
             Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
             Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE

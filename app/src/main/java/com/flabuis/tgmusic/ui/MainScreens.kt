@@ -4,6 +4,16 @@ package com.flabuis.tgmusic.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.withFrameMillis
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -102,7 +112,6 @@ import com.flabuis.tgmusic.data.Library
 import com.flabuis.tgmusic.data.Track
 import com.flabuis.tgmusic.player.PlayerConnection
 import com.flabuis.tgmusic.td.Td
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.drinkless.tdlib.TdApi
 import sh.calvin.reorderable.ReorderableItem
@@ -192,6 +201,7 @@ private fun HomeScreen(onOpen: (Channel) -> Unit, onPick: () -> Unit, onSettings
                 Text(if (channels.isEmpty()) "Музыка из твоего Telegram" else "${channels.size} ${playlistsWord(channels.size)}")
             },
             actions = {
+                BluetoothButton()
                 Box {
                     IconButton(onClick = { menu = true }, shapes = IconButtonDefaults.shapes()) {
                         Icon(Icons.Default.MoreVert, "Меню")
@@ -413,6 +423,34 @@ private fun PlaylistScreen(channel: Channel, onBack: () -> Unit) {
         it.title.contains(query, ignoreCase = true) || it.artist.contains(query, ignoreCase = true)
     }
 
+    var menuFor by remember { mutableStateOf<String?>(null) }
+    var movedDuringDrag by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf<Track?>(null) }
+    val scope = rememberCoroutineScope()
+
+    deleting?.let { track ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Удалить трек?") },
+            text = { Text("«${track.title}» удалится из «${channel.title}» в Telegram у всех. Вернуть не получится.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleting = null
+                    scope.launch {
+                        try {
+                            PlayerConnection.removeFromQueue(track.mediaId)
+                            Library.deleteTrack(track)
+                            tracks = Library.cachedTracks(channel.id)
+                        } catch (e: Exception) {
+                            error = e.message
+                        }
+                    }
+                }) { Text("Удалить", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Отмена") } },
+        )
+    }
+
     val listState = rememberLazyListState()
     val reorderState = rememberReorderableLazyListState(listState) { from, to ->
         val list = tracks ?: return@rememberReorderableLazyListState
@@ -420,6 +458,7 @@ private fun PlaylistScreen(channel: Channel, onBack: () -> Unit) {
         val toIndex = list.indexOfFirst { it.mediaId == to.key }
         if (fromIndex >= 0 && toIndex >= 0) {
             tracks = list.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+            movedDuringDrag = true
             haptic.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
         }
     }
@@ -480,18 +519,39 @@ private fun PlaylistScreen(channel: Channel, onBack: () -> Unit) {
                             color = if (isDragging) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
                             modifier = Modifier.padding(horizontal = 8.dp).scale(scale),
                         ) {
-                            TrackRow(
-                                track = t,
-                                isCurrent = t.mediaId == player.mediaId,
-                                isPlaying = player.isPlaying,
-                                modifier = Modifier.longPressDraggableHandle(
-                                    enabled = canReorder,
-                                    onDragStarted = { haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
-                                    onDragStopped = { tracks?.let { Library.saveOrder(channel.id, it) } },
-                                ),
-                            ) {
-                                val index = shown.indexOf(t)
-                                PlayerConnection.playQueue(shown, index, shuffle = player.shuffle)
+                            Box {
+                                TrackRow(
+                                    track = t,
+                                    isCurrent = t.mediaId == player.mediaId,
+                                    isPlaying = player.isPlaying,
+                                    // Long press: drag to move. Long press and let go without moving: menu.
+                                    modifier = if (canReorder) Modifier.longPressDraggableHandle(
+                                        onDragStarted = {
+                                            movedDuringDrag = false
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        },
+                                        onDragStopped = {
+                                            if (movedDuringDrag) tracks?.let { Library.saveOrder(channel.id, it) }
+                                            else menuFor = t.mediaId
+                                        },
+                                    ) else Modifier,
+                                    onLongClick = if (canReorder) null else {
+                                        {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            menuFor = t.mediaId
+                                        }
+                                    },
+                                ) {
+                                    val index = shown.indexOf(t)
+                                    PlayerConnection.playQueue(shown, index, shuffle = player.shuffle)
+                                }
+                                TrackMenu(
+                                    track = t,
+                                    expanded = menuFor == t.mediaId,
+                                    isCurrent = t.mediaId == player.mediaId,
+                                    onDismiss = { menuFor = null },
+                                    onDelete = { menuFor = null; deleting = t },
+                                )
                             }
                         }
                     }
@@ -499,6 +559,57 @@ private fun PlaylistScreen(channel: Channel, onBack: () -> Unit) {
             }
         }
     }
+}
+
+/** Telegram-style menu on long press. */
+@Composable
+private fun TrackMenu(
+    track: Track,
+    expanded: Boolean,
+    isCurrent: Boolean,
+    onDismiss: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(20.dp),
+        offset = DpOffset(72.dp, 0.dp),
+    ) {
+        DropdownMenuItem(
+            text = { Text("Играть следующим") },
+            leadingIcon = { Icon(AppIcons.Next, null) },
+            onClick = { onDismiss(); PlayerConnection.playNext(track) },
+        )
+        if (isCurrent) {
+            DropdownMenuItem(
+                text = { Text("Повторить один раз") },
+                leadingIcon = { Icon(AppIcons.RepeatOne, null) },
+                onClick = { onDismiss(); PlayerConnection.repeatCurrentOnce() },
+            )
+        }
+        if (PlayerConnection.isInQueue(track.mediaId)) {
+            DropdownMenuItem(
+                text = { Text("Убрать из очереди") },
+                leadingIcon = { Icon(AppIcons.RemoveQueue, null) },
+                onClick = { onDismiss(); PlayerConnection.removeFromQueue(track.mediaId) },
+            )
+        }
+        DropdownMenuItem(
+            text = { Text("Удалить из чата", color = MaterialTheme.colorScheme.error) },
+            leadingIcon = { Icon(AppIcons.Delete, null, tint = MaterialTheme.colorScheme.error) },
+            onClick = onDelete,
+        )
+    }
+}
+
+/** Track change: slides the way you skipped (next = from the right, back = from the left). */
+private fun <S> AnimatedContentTransitionScope<S>.trackChange(): ContentTransform {
+    val dir = PlayerConnection.direction
+    return (slideInHorizontally(spring(dampingRatio = 0.8f, stiffness = 300f)) { it * dir / 2 } +
+        fadeIn() + scaleIn(initialScale = 0.9f)) togetherWith
+        (slideOutHorizontally(spring(dampingRatio = 0.8f, stiffness = 300f)) { -it * dir / 2 } +
+            fadeOut() + scaleOut(targetScale = 0.9f))
 }
 
 @Composable
@@ -555,10 +666,11 @@ private fun TrackRow(
     isCurrent: Boolean,
     isPlaying: Boolean,
     modifier: Modifier,
+    onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     Row(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).clickable(onClick = onClick)
+        modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -619,9 +731,9 @@ private fun TrackRow(
 private fun rememberPosition(): State<Long> {
     val pos = remember { mutableLongStateOf(PlayerConnection.positionMs) }
     LaunchedEffect(Unit) {
+        // Every frame: the controller estimates the position between updates, so it moves smoothly.
         while (true) {
-            pos.longValue = PlayerConnection.positionMs
-            delay(250)
+            withFrameMillis { pos.longValue = PlayerConnection.positionMs }
         }
     }
     return pos
@@ -642,19 +754,29 @@ private fun MiniPlayer(onOpen: () -> Unit) {
     ) {
         Column(Modifier.clickable(onClick = onOpen).padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TdImage(s.coverSmall, null, Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))) {
-                    LetterCover(s.title, Modifier.fillMaxSize(), small = true)
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLargeEmphasized)
-                    Text(
-                        s.error ?: s.artist,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (s.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                AnimatedContent(
+                    targetState = s,
+                    contentKey = { it.mediaId },
+                    transitionSpec = { trackChange() },
+                    modifier = Modifier.weight(1f),
+                    label = "miniTrack",
+                ) { st ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TdImage(st.coverSmall, null, Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))) {
+                            LetterCover(st.title, Modifier.fillMaxSize(), small = true)
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(st.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLargeEmphasized)
+                            Text(
+                                s.error ?: st.artist,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (s.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
                 PlayPauseButton(s.isPlaying, s.isBuffering, size = 48)
                 IconButton(onClick = PlayerConnection::next, shapes = IconButtonDefaults.shapes()) {
@@ -738,22 +860,39 @@ private fun NowPlayingScreen(onClose: () -> Unit) {
                     .align(Alignment.CenterHorizontally)
                     .scale(coverScale),
             ) {
-                Surface(shape = RoundedCornerShape(coverCorner), shadowElevation = 16.dp, modifier = Modifier.fillMaxSize()) {
-                    TdImage(s.coverLarge, null, Modifier.fillMaxSize(), maxPx = 1080, fallbackId = s.coverSmall) {
-                        LetterCover(s.title, Modifier.fillMaxSize())
+                AnimatedContent(
+                    targetState = s,
+                    contentKey = { it.mediaId },
+                    transitionSpec = { trackChange() },
+                    modifier = Modifier.fillMaxSize(),
+                    label = "cover",
+                ) { st ->
+                    Surface(shape = RoundedCornerShape(coverCorner), shadowElevation = 16.dp, modifier = Modifier.fillMaxSize()) {
+                        TdImage(st.coverLarge, null, Modifier.fillMaxSize(), maxPx = 1080, fallbackId = st.coverSmall) {
+                            LetterCover(st.title, Modifier.fillMaxSize())
+                        }
                     }
                 }
             }
             Spacer(Modifier.height(28.dp))
-            Text(s.title, style = MaterialTheme.typography.headlineSmallEmphasized, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                s.artist,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            AnimatedContent(
+                targetState = s,
+                contentKey = { it.mediaId },
+                transitionSpec = { trackChange() },
+                label = "title",
+            ) { st ->
+                Column(Modifier.fillMaxWidth()) {
+                    Text(st.title, style = MaterialTheme.typography.headlineSmallEmphasized, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        st.artist,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
             s.error?.let {
                 Spacer(Modifier.height(4.dp))
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
