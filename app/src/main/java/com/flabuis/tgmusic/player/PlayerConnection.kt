@@ -2,6 +2,7 @@ package com.flabuis.tgmusic.player
 
 import android.content.ComponentName
 import android.content.Context
+import android.os.Bundle
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -24,9 +25,14 @@ data class PlayerUi(
     val shuffle: Boolean = false,
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
     val error: String? = null,
+    val coverSmall: Int? = null,
+    val coverLarge: Int? = null,
 )
 
 /** UI side of the player: talks to [PlaybackService] through a MediaController. */
+const val EXTRA_COVER_SMALL = "cover_small"
+const val EXTRA_COVER_LARGE = "cover_large"
+
 object PlayerConnection {
     private var controller: MediaController? = null
     private var pending: (() -> Unit)? = null
@@ -75,6 +81,8 @@ object PlayerConnection {
             shuffle = c.shuffleModeEnabled,
             repeatMode = c.repeatMode,
             error = if (c.playerError != null) _state.value.error else null,
+            coverSmall = meta.extras?.getInt(EXTRA_COVER_SMALL)?.takeIf { it != 0 },
+            coverLarge = meta.extras?.getInt(EXTRA_COVER_LARGE)?.takeIf { it != 0 },
         )
     }
 
@@ -122,6 +130,10 @@ object PlayerConnection {
                     .setArtist(artist)
                     .setIsPlayable(true)
                     .setIsBrowsable(false)
+                    .setExtras(Bundle().apply {
+                        putInt(EXTRA_COVER_SMALL, coverSmall ?: 0)
+                        putInt(EXTRA_COVER_LARGE, coverLarge ?: coverSmall ?: 0)
+                    })
                     .build()
             )
             .build()

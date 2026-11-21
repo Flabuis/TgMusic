@@ -18,6 +18,12 @@ data class Track(
     val artist: String,
     val duration: Int,
     val size: Long,
+    /** Small album cover / document thumbnail (TDLib file id), if any. */
+    val coverSmall: Int? = null,
+    /** Biggest cover available, for the player screen and notification. */
+    val coverLarge: Int? = null,
+    /** Tiny blurred preview shown while the cover loads. */
+    val mini: ByteArray? = null,
 ) {
     /** Unique id used by the player: chatId_messageId_fileId */
     val mediaId: String get() = "${chatId}_${messageId}_$fileId"
@@ -110,9 +116,50 @@ object Library {
         val tracks = mutableListOf<Track>()
         collect(chatId, TdApi.SearchMessagesFilterAudio(), tracks)
         collect(chatId, TdApi.SearchMessagesFilterDocument(), tracks)
-        val result = tracks.distinctBy { it.fileId }.sortedByDescending { it.messageId }
+        val result = applyOrder(chatId, tracks.distinctBy { it.fileId }.sortedByDescending { it.messageId })
         trackCache[chatId] = result
         return result
+    }
+
+    // ----- custom order (drag & drop) -----
+
+    private fun orderPrefs() = ctx.getSharedPreferences("order", Context.MODE_PRIVATE)
+
+    /** Saved order first; tracks added to the chat later go on top. */
+    private fun applyOrder(chatId: Long, tracks: List<Track>): List<Track> {
+        val saved = orderPrefs().getString(chatId.toString(), null)
+            ?.split(',')?.mapNotNull { it.toLongOrNull() } ?: return tracks
+        val byId = tracks.associateBy { it.messageId }
+        val savedSet = saved.toHashSet()
+        val fresh = tracks.filter { it.messageId !in savedSet }
+        return fresh + saved.mapNotNull { byId[it] }
+    }
+
+    fun saveOrder(chatId: Long, tracks: List<Track>) {
+        trackCache[chatId] = tracks
+        orderPrefs().edit().putString(chatId.toString(), tracks.joinToString(",") { it.messageId.toString() }).apply()
+    }
+
+    fun hasCustomOrder(chatId: Long) = orderPrefs().contains(chatId.toString())
+
+    fun resetOrder(chatId: Long) {
+        orderPrefs().edit().remove(chatId.toString()).apply()
+        trackCache[chatId]?.let { list -> trackCache[chatId] = list.sortedByDescending { it.messageId } }
+    }
+
+    // ----- chat avatars -----
+
+    private val photos = ConcurrentHashMap<Long, TdApi.ChatPhotoInfo>()
+    private val noPhoto = ConcurrentHashMap.newKeySet<Long>()
+
+    fun cachedPhoto(chatId: Long): TdApi.ChatPhotoInfo? = photos[chatId]
+
+    suspend fun chatPhoto(chatId: Long): TdApi.ChatPhotoInfo? {
+        photos[chatId]?.let { return it }
+        if (chatId in noPhoto) return null
+        val photo = try { Td.send(TdApi.GetChat(chatId)).photo } catch (e: TdException) { null }
+        if (photo != null) photos[chatId] = photo else noPhoto += chatId
+        return photo
     }
 
     private suspend fun collect(chatId: Long, filter: TdApi.SearchMessagesFilter, out: MutableList<Track>) {
@@ -139,6 +186,10 @@ object Library {
                     artist = a.performer.ifBlank { "Неизвестен" },
                     duration = a.duration,
                     size = a.audio.size.takeIf { it > 0 } ?: a.audio.expectedSize,
+                    coverSmall = a.albumCoverThumbnail?.file?.id,
+                    coverLarge = (a.externalAlbumCovers.maxByOrNull { it.width * it.height }
+                        ?: a.albumCoverThumbnail)?.file?.id,
+                    mini = a.albumCoverMinithumbnail?.data,
                 )
             }
             is TdApi.MessageDocument -> {
@@ -153,6 +204,9 @@ object Library {
                     artist = artist,
                     duration = 0,
                     size = d.document.size.takeIf { it > 0 } ?: d.document.expectedSize,
+                    coverSmall = d.thumbnail?.file?.id,
+                    coverLarge = d.thumbnail?.file?.id,
+                    mini = d.minithumbnail?.data,
                 )
             }
             else -> null

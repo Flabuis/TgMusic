@@ -2,16 +2,23 @@ package com.flabuis.tgmusic.player
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.Uri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.flabuis.tgmusic.td.TgDataSource
+import com.flabuis.tgmusic.ui.ImageCache
 import com.flabuis.tgmusic.ui.MainActivity
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import java.io.File
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 
@@ -20,6 +27,7 @@ import com.google.common.util.concurrent.ListenableFuture
 class PlaybackService : MediaSessionService() {
 
     private var session: MediaSession? = null
+    private val scope = MainScope()
 
     override fun onCreate() {
         super.onCreate()
@@ -60,6 +68,34 @@ class PlaybackService : MediaSessionService() {
                 }
             })
             .build()
+
+        player.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                mediaItem?.let { loadArtwork(player, it) }
+            }
+        })
+    }
+
+    /** Puts the album cover into the notification / lock screen once it's downloaded. */
+    private fun loadArtwork(player: ExoPlayer, item: MediaItem) {
+        if (item.mediaMetadata.artworkUri != null) return
+        val cover = item.mediaMetadata.extras?.getInt(EXTRA_COVER_LARGE) ?: 0
+        if (cover == 0) return
+        scope.launch {
+            val path = try { ImageCache.path(cover) } catch (e: Exception) { null } ?: return@launch
+            for (i in 0 until player.mediaItemCount) {
+                val current = player.getMediaItemAt(i)
+                if (current.mediaId == item.mediaId) {
+                    player.replaceMediaItem(
+                        i,
+                        current.buildUpon().setMediaMetadata(
+                            current.mediaMetadata.buildUpon().setArtworkUri(Uri.fromFile(File(path))).build()
+                        ).build()
+                    )
+                    break
+                }
+            }
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -77,6 +113,7 @@ class PlaybackService : MediaSessionService() {
             release()
         }
         session = null
+        scope.cancel()
         super.onDestroy()
     }
 }
