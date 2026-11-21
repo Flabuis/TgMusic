@@ -83,6 +83,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -144,22 +145,6 @@ fun MainApp() {
         if (selected.isEmpty()) stack = listOf(Screen.Home, Screen.Picker)
     }
 
-    // Live background behind the whole app (home, playlists, settings), in the playing track's colors.
-    val player by PlayerConnection.state.collectAsState()
-    val live by Settings.liveBackground.collectAsState()
-    if (live && player.hasMedia) {
-        val palette = rememberCoverPalette(
-            player.coverLarge ?: player.coverSmall,
-            listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary),
-        )
-        LiveBackground(
-            colors = palette,
-            base = MaterialTheme.colorScheme.background,
-            intensity = 0.5f,
-            playing = player.isPlaying,
-        )
-    }
-
     Column(Modifier.fillMaxSize()) {
         AnimatedContent(
             targetState = current,
@@ -219,6 +204,11 @@ private fun HomeScreen(onOpen: (Channel) -> Unit, onPick: () -> Unit, onSettings
     Column(Modifier.fillMaxSize()) {
         LargeFlexibleTopAppBar(
             title = { Text("TgMusic") },
+            // see-through, so the live background shows behind the title
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = Color.Transparent,
+                scrolledContainerColor = Color.Transparent,
+            ),
             subtitle = {
                 Text(if (channels.isEmpty()) "Музыка из твоего Telegram" else "${channels.size} ${playlistsWord(channels.size)}")
             },
@@ -1165,4 +1155,22 @@ private fun plural(n: Int, one: String, few: String, many: String): String {
         mod10 in 2..4 -> few
         else -> many
     }
+}
+
+/** Live background behind the whole app (incl. under the status bar), in the playing track's colors. */
+@Composable
+fun AppLiveBackground() {
+    val player by PlayerConnection.state.collectAsState()
+    val live by Settings.liveBackground.collectAsState()
+    if (!live || !player.hasMedia) return
+    val palette = rememberCoverPalette(
+        player.coverLarge ?: player.coverSmall,
+        listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary),
+    )
+    LiveBackground(
+        colors = palette,
+        base = MaterialTheme.colorScheme.background,
+        intensity = 0.5f,
+        playing = player.isPlaying,
+    )
 }

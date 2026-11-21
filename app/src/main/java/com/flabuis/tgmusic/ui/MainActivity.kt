@@ -52,6 +52,7 @@ class MainActivity : ComponentActivity() {
             }
             TgMusicTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    AppLiveBackground()
                     Box(Modifier.fillMaxSize().systemBarsPadding()) {
                         Root()
                     }
