@@ -118,7 +118,7 @@ private fun HomeScreen(onOpen: (Channel) -> Unit, onPick: () -> Unit) {
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Меню") }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("Выбрать каналы") }, onClick = { menu = false; onPick() })
+                    DropdownMenuItem(text = { Text("Выбрать чаты с музыкой") }, onClick = { menu = false; onPick() })
                     DropdownMenuItem(text = { Text("Выйти из аккаунта") }, onClick = {
                         menu = false
                         PlayerConnection.stop()
@@ -137,9 +137,9 @@ private fun HomeScreen(onOpen: (Channel) -> Unit, onPick: () -> Unit) {
             ) {
                 Text("Плейлистов пока нет", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
-                Text("Выбери каналы, где лежит музыка", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Выбери каналы или группы, где лежит музыка", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(16.dp))
-                Button(onClick = onPick) { Text("Выбрать каналы") }
+                Button(onClick = onPick) { Text("Выбрать чаты с музыкой") }
             }
             return@Column
         }
@@ -208,17 +208,17 @@ private fun PickerScreen(onDone: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        TopBar("Мои каналы", onBack = onDone)
+        TopBar("Каналы и группы", onBack = onDone)
         Text(
-            "Отметь каналы с музыкой — каждый станет плейлистом",
+            "Отметь, где лежит музыка — каждый чат станет плейлистом",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         )
         val list = channels
         when {
             error != null -> MessageScreen("Не получилось загрузить каналы: $error")
-            list == null -> LoadingScreen("Ищу твои каналы…")
-            list.isEmpty() -> MessageScreen("Не нашёл каналов, где ты владелец или админ")
+            list == null -> LoadingScreen("Ищу твои каналы и группы…")
+            list.isEmpty() -> MessageScreen("Не нашёл каналов и групп, где ты владелец или админ")
             else -> {
                 LazyColumn(Modifier.weight(1f)) {
                     items(list, key = { it.id }) { ch ->
@@ -233,7 +233,7 @@ private fun PickerScreen(onDone: () -> Unit) {
                             Column(Modifier.weight(1f)) {
                                 Text(ch.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(
-                                    if (ch.isOwner) "твой канал" else "ты админ",
+                                    (if (ch.isGroup) "группа" else "канал") + if (ch.isOwner) " · твоя" else " · ты админ",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -301,9 +301,9 @@ private fun PlaylistScreen(channel: Channel, onBack: () -> Unit) {
             )
         }
         when {
-            loading && all.isEmpty() -> LoadingScreen("Собираю треки из канала…")
+            loading && all.isEmpty() -> LoadingScreen("Собираю треки…")
             error != null && all.isEmpty() -> MessageScreen("Ошибка: $error")
-            all.isEmpty() -> MessageScreen("В этом канале нет аудио")
+            all.isEmpty() -> MessageScreen("Здесь нет аудио")
             else -> {
                 if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                 Row(

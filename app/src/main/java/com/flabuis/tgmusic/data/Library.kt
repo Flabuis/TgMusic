@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import org.drinkless.tdlib.TdApi
 import java.util.concurrent.ConcurrentHashMap
 
-data class Channel(val id: Long, val title: String, val isOwner: Boolean)
+data class Channel(val id: Long, val title: String, val isOwner: Boolean, val isGroup: Boolean = false)
 
 data class Track(
     val chatId: Long,
@@ -59,7 +59,7 @@ object Library {
         setSelected(emptyList())
     }
 
-    /** All channels where the user is the owner or an admin. Owners first. */
+    /** All channels and groups where the user is the owner or an admin. Owners first. */
     suspend fun loadMyChannels(): List<Channel> {
         loadAllChats(TdApi.ChatListMain())
         loadAllChats(TdApi.ChatListArchive())
@@ -70,12 +70,22 @@ object Library {
         val result = mutableListOf<Channel>()
         for (id in ids) {
             val chat = try { Td.send(TdApi.GetChat(id)) } catch (e: TdException) { continue }
-            val type = chat.type as? TdApi.ChatTypeSupergroup ?: continue
-            if (!type.isChannel) continue
-            val sg = try { Td.send(TdApi.GetSupergroup(type.supergroupId)) } catch (e: TdException) { continue }
-            when (sg.status) {
-                is TdApi.ChatMemberStatusCreator -> result += Channel(chat.id, chat.title, true)
-                is TdApi.ChatMemberStatusAdministrator -> result += Channel(chat.id, chat.title, false)
+            // Channels, supergroups and small (basic) groups where the user is owner or admin.
+            val status: TdApi.ChatMemberStatus = when (val type = chat.type) {
+                is TdApi.ChatTypeSupergroup ->
+                    try { Td.send(TdApi.GetSupergroup(type.supergroupId)).status } catch (e: TdException) { continue }
+                is TdApi.ChatTypeBasicGroup -> {
+                    val bg = try { Td.send(TdApi.GetBasicGroup(type.basicGroupId)) } catch (e: TdException) { continue }
+                    if (!bg.isActive) continue // upgraded to a supergroup, that one is listed instead
+                    bg.status
+                }
+                else -> continue
+            }
+            val isGroup = chat.type !is TdApi.ChatTypeSupergroup ||
+                !(chat.type as TdApi.ChatTypeSupergroup).isChannel
+            when (status) {
+                is TdApi.ChatMemberStatusCreator -> result += Channel(chat.id, chat.title, true, isGroup)
+                is TdApi.ChatMemberStatusAdministrator -> result += Channel(chat.id, chat.title, false, isGroup)
                 else -> {}
             }
         }
