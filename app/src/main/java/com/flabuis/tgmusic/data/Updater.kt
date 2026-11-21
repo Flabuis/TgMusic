@@ -88,6 +88,7 @@ object Updater {
     }
 
     suspend fun download(context: Context, update: UpdateState.Available) {
+        lastOffer = update
         _state.value = UpdateState.Downloading(update.version, 0f)
         try {
             val file = withContext(Dispatchers.IO) {
@@ -134,29 +135,43 @@ object Updater {
                 conn.disconnect()
                 out
             }
+            // The screen opens the installer itself: launching it from here (app context, after a
+            // background download) gets silently blocked on MIUI/HyperOS and some other phones.
             _state.value = UpdateState.Ready(update.version, file)
-            install(context, file)
         } catch (e: Exception) {
             _state.value = UpdateState.Failed(e.message ?: "Ошибка загрузки")
         }
     }
 
-    /** Opens Android's installer. If installing from TgMusic isn't allowed yet, opens that setting first. */
+    /** True if Android lets TgMusic install APKs (the "unknown sources" switch for this app). */
+    fun canInstall(context: Context): Boolean =
+        Build.VERSION.SDK_INT < 26 || context.packageManager.canRequestPackageInstalls()
+
+    /** Settings page with the "allow installing from TgMusic" switch. */
+    fun permissionIntent(context: Context): Intent =
+        Intent(AndroidSettings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
+
+    /** Opens Android's installer. Call with an Activity context. */
     fun install(context: Context, file: File) {
-        if (Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
-            context.startActivity(
-                Intent(AndroidSettings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-            return
-        }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
-        context.startActivity(
-            Intent(Intent.ACTION_VIEW)
-                .setDataAndType(uri, "application/vnd.android.package-archive")
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
+        try {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(uri, "application/vnd.android.package-archive")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            )
+        } catch (e: Exception) {
+            _state.value = UpdateState.Failed("Не открылся установщик: ${e.message}")
+        }
     }
+
+    /** Back to "available" so the card can retry. */
+    fun retry(update: UpdateState.Available) {
+        _state.value = update
+    }
+
+    private var lastOffer: UpdateState.Available? = null
+    fun lastAvailable(): UpdateState.Available? = lastOffer
 
     fun dismiss() {
         _state.value = UpdateState.Idle

@@ -23,7 +23,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.toShape
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
@@ -46,7 +49,22 @@ fun UpdateBanner() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val st = state
-    if (st !is UpdateState.Available && st !is UpdateState.Downloading && st !is UpdateState.Ready) return
+    val failedDownload = st is UpdateState.Failed && Updater.lastAvailable() != null
+    if (st !is UpdateState.Available && st !is UpdateState.Downloading && st !is UpdateState.Ready && !failedDownload) return
+
+    // "Allow installing from TgMusic" screen: when the user comes back with it allowed, install right away.
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        val ready = Updater.state.value as? UpdateState.Ready
+        if (ready != null && Updater.canInstall(context)) Updater.install(context, ready.file)
+    }
+    val installNow: (UpdateState.Ready) -> Unit = { r ->
+        if (Updater.canInstall(context)) Updater.install(context, r.file)
+        else permissionLauncher.launch(Updater.permissionIntent(context))
+    }
+    // As soon as the download finishes, open the installer (from the visible screen).
+    LaunchedEffect(st) {
+        if (st is UpdateState.Ready) installNow(st)
+    }
 
     Surface(
         shape = RoundedCornerShape(28.dp),
@@ -68,7 +86,7 @@ fun UpdateBanner() {
                         is UpdateState.Available -> st.version
                         is UpdateState.Downloading -> st.version
                         is UpdateState.Ready -> st.version
-                        else -> ""
+                        else -> Updater.lastAvailable()?.version ?: ""
                     }
                     Text(
                         "Обновление $version",
@@ -110,12 +128,39 @@ fun UpdateBanner() {
                         color = MaterialTheme.colorScheme.onTertiaryContainer,
                     )
                 }
-                is UpdateState.Ready -> Button(
-                    onClick = { Updater.install(context, st.file) },
-                    shapes = ButtonDefaults.shapes(),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Установить") }
+                is UpdateState.Ready -> {
+                    if (!Updater.canInstall(context)) {
+                        Text(
+                            "Android попросит разрешить TgMusic устанавливать приложения: включи переключатель и вернись назад.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    Button(
+                        onClick = { installNow(st) },
+                        shapes = ButtonDefaults.shapes(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Установить") }
+                }
+                is UpdateState.Failed -> {
+                    Text(
+                        st.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row {
+                        TextButton(onClick = { Updater.dismiss() }) { Text("Позже") }
+                        Spacer(Modifier.weight(1f))
+                        Button(
+                            onClick = { Updater.lastAvailable()?.let { Updater.retry(it) } },
+                            shapes = ButtonDefaults.shapes(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
+                        ) { Text("Ещё раз") }
+                    }
+                }
                 else -> {}
             }
         }
