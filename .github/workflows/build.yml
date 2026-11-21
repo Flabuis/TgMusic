@@ -60,9 +60,13 @@ jobs:
       - name: Dump Material3 API (dev branches only)
         if: startsWith(github.ref, 'refs/heads/dev/')
         run: |
-          AAR=$(find ~/.gradle/caches -name 'material3-android-1.5*.aar' | head -1)
+          find ~/.gradle -iname '*material3-android*' 2>/dev/null | head -20
+          AAR=$(find ~/.gradle -iname 'material3-android-1.5*.aar' 2>/dev/null | head -1)
+          if [ -z "$AAR" ]; then JAR=$(find ~/.gradle -path '*material3-android-1.5*' -name 'classes.jar' 2>/dev/null | head -1); else JAR=""; fi
+          echo "JAR=$JAR"
           echo "AAR=$AAR"
-          mkdir -p /tmp/m3 && cd /tmp/m3 && unzip -oq "$AAR" classes.jar && unzip -oq classes.jar
+          mkdir -p /tmp/m3 && cd /tmp/m3
+          if [ -n "$AAR" ]; then unzip -oq "$AAR" classes.jar && unzip -oq classes.jar; else unzip -oq "$JAR"; fi
           ls androidx/compose/material3 | grep -iE 'wavy|loading|materialshapes|toolbar|buttongroup|flexible|ShapesKt|Typography' | head -60
           for c in LoadingIndicatorKt WavyProgressIndicatorKt WavyProgressIndicatorDefaults MaterialShapes MaterialShapesKt ShapesKt IconButtonDefaults ButtonDefaults ButtonGroupKt ButtonGroupDefaults Typography AppBarKt SliderDefaults IconButtonKt; do
             f=androidx/compose/material3/$c.class
