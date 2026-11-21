@@ -63,6 +63,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -214,13 +215,15 @@ private fun HomeScreen(onOpen: (Channel) -> Unit, onPick: () -> Unit, onSettings
             },
             actions = {
                 BluetoothButton()
+                IconButton(onClick = onSettings, shapes = IconButtonDefaults.shapes()) {
+                    Icon(Icons.Default.Settings, "Настройки")
+                }
                 Box {
                     IconButton(onClick = { menu = true }, shapes = IconButtonDefaults.shapes()) {
                         Icon(Icons.Default.MoreVert, "Меню")
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text("Выбрать чаты с музыкой") }, onClick = { menu = false; onPick() })
-                        DropdownMenuItem(text = { Text("Настройки") }, onClick = { menu = false; onSettings() })
                         DropdownMenuItem(text = { Text("Выйти из аккаунта") }, onClick = {
                             menu = false
                             PlayerConnection.stop()

@@ -38,8 +38,25 @@ object Settings {
         prefs().edit().putInt("crossfade", sec).apply()
     }
 
+    private val _liveBrightness = MutableStateFlow(1f)
+    /** Brightness of the live background in the app (0.3..1.8, 1 = default). */
+    val liveBrightness: StateFlow<Float> = _liveBrightness
+    private val _idleBrightness = MutableStateFlow(1f)
+    /** Same for the idle screen. */
+    val idleBrightness: StateFlow<Float> = _idleBrightness
+    private val _lyricsColor = MutableStateFlow(0xFFFFFFFF.toInt())
+    /** Color of lyrics text (ARGB). 0 = take it from the album cover. */
+    val lyricsColor: StateFlow<Int> = _lyricsColor
+
+    fun setLiveBrightness(v: Float) { _liveBrightness.value = v; prefs().edit().putFloat("live_brightness", v).apply() }
+    fun setIdleBrightness(v: Float) { _idleBrightness.value = v; prefs().edit().putFloat("idle_brightness", v).apply() }
+    fun setLyricsColor(argb: Int) { _lyricsColor.value = argb; prefs().edit().putInt("lyrics_color", argb).apply() }
+
     fun init(context: Context) {
         ctx = context.applicationContext
+        _liveBrightness.value = prefs().getFloat("live_brightness", 1f)
+        _idleBrightness.value = prefs().getFloat("idle_brightness", 1f)
+        _lyricsColor.value = prefs().getInt("lyrics_color", 0xFFFFFFFF.toInt())
         _crossfadeSec.value = prefs().getInt("crossfade", 6)
         _liveBackground.value = prefs().getBoolean("live_bg", true)
         val saved = prefs().getString("theme", null)

@@ -3,6 +3,21 @@
 package com.flabuis.tgmusic.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialShapes
+import androidx.compose.material3.toShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -53,6 +68,7 @@ import kotlin.math.roundToInt
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
     val theme by Settings.theme.collectAsState()
+    var tab by remember { mutableStateOf(0) }
     var cacheSize by remember { mutableStateOf<Long?>(null) }
     var clearing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -73,6 +89,31 @@ fun SettingsScreen(onBack: () -> Unit) {
         }
 
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
+            // Two tabs: looks & everything else
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainer).padding(4.dp),
+            ) {
+                listOf("Кастомизация", "Основные").forEachIndexed { i, label ->
+                    val selected = tab == i
+                    val bg by animateColorAsState(
+                        if (selected) MaterialTheme.colorScheme.primary else Color.Transparent, label = "tabBg",
+                    )
+                    val fg by animateColorAsState(
+                        if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant, label = "tabFg",
+                    )
+                    Box(
+                        Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(24.dp))
+                            .background(bg).clickable { tab = i },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(label, color = fg, style = MaterialTheme.typography.titleSmallEmphasized)
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+
+            if (tab == 0) {
             Section("Тема") {
                 AppTheme.entries.forEach { t ->
                     Row(
@@ -86,25 +127,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                         Text(t.title, style = MaterialTheme.typography.bodyLarge)
                     }
                 }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            val crossfade by Settings.crossfadeSec.collectAsState()
-            Section("Кроссфейд") {
-                Text(
-                    if (crossfade == 0) "Выключен: треки идут друг за другом"
-                    else "Конец трека плавно перетекает в следующий за $crossfade сек",
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-                Slider(
-                    value = crossfade.toFloat(),
-                    onValueChange = { Settings.setCrossfade(it.roundToInt()) },
-                    valueRange = 0f..12f,
-                    steps = 11,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
             }
 
             Spacer(Modifier.height(16.dp))
@@ -126,6 +148,68 @@ fun SettingsScreen(onBack: () -> Unit) {
                     Spacer(Modifier.width(12.dp))
                     Switch(checked = live, onCheckedChange = { Settings.setLiveBackground(it) })
                 }
+                if (live) {
+                    val bright by Settings.liveBrightness.collectAsState()
+                    val idleBright by Settings.idleBrightness.collectAsState()
+                    LabeledSlider("Яркость в приложении", bright, Settings::setLiveBrightness)
+                    LabeledSlider("Яркость в режиме ожидания", idleBright, Settings::setIdleBrightness)
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            Spacer(Modifier.height(16.dp))
+
+            val lyricsColor by Settings.lyricsColor.collectAsState()
+            Section("Цвет текста песни") {
+                Text(
+                    "Текущая строка в тексте песни и в режиме ожидания",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    textColors.forEach { (argb, name) ->
+                        val selected = lyricsColor == argb
+                        val scale by animateFloatAsState(if (selected) 1.12f else 1f, spring(dampingRatio = 0.5f), label = "swatch")
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(
+                                Modifier.size(52.dp).scale(scale)
+                                    .clip(if (selected) MaterialShapes.Cookie9Sided.toShape() else CircleShape)
+                                    .background(
+                                        if (argb == 0) Brush.sweepGradient(listOf(Color(0xFFFF5A36), Color(0xFFFFD43B), Color(0xFF3BC9DB), Color(0xFFB197FC), Color(0xFFFF5A36)))
+                                        else Brush.linearGradient(listOf(Color(argb), Color(argb)))
+                                    )
+                                    .border(2.dp, if (selected) MaterialTheme.colorScheme.primary else Color.Transparent, if (selected) MaterialShapes.Cookie9Sided.toShape() else CircleShape)
+                                    .clickable { Settings.setLyricsColor(argb) },
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(name, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+
+            } else {
+            val crossfade by Settings.crossfadeSec.collectAsState()
+            Section("Кроссфейд") {
+                Text(
+                    if (crossfade == 0) "Выключен: треки идут друг за другом"
+                    else "Конец трека плавно перетекает в следующий за $crossfade сек",
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                Slider(
+                    value = crossfade.toFloat(),
+                    onValueChange = { Settings.setCrossfade(it.roundToInt()) },
+                    valueRange = 0f..12f,
+                    steps = 11,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
             }
 
             Spacer(Modifier.height(16.dp))
@@ -195,6 +279,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 }
                 Spacer(Modifier.height(12.dp))
             }
+            }
         }
     }
 }
@@ -215,6 +300,28 @@ private fun Section(title: String, content: @Composable () -> Unit) {
             )
             content()
         }
+    }
+}
+
+private val textColors = listOf(
+    0xFFFFFFFF.toInt() to "Белый",
+    0 to "Обложка",
+    0xFFFFD6A5.toInt() to "Тёплый",
+    0xFFA5D8FF.toInt() to "Голубой",
+    0xFFFFB3D9.toInt() to "Розовый",
+    0xFFB2F2BB.toInt() to "Мятный",
+    0xFFFFEC99.toInt() to "Жёлтый",
+    0xFFD0BFFF.toInt() to "Сирень",
+)
+
+@Composable
+private fun LabeledSlider(label: String, value: Float, onChange: (Float) -> Unit) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+        Row {
+            Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text("${(value * 100).roundToInt()}%", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
+        Slider(value = value, onValueChange = onChange, valueRange = 0.3f..1.8f)
     }
 }
 
