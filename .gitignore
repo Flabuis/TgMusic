@@ -1,0 +1,11 @@
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+# TDLib is downloaded by CI from the TDLib release
+app/src/main/jniLibs/
+app/src/tdlib/
+tdlib/
+tdlib.zip
+*.jks

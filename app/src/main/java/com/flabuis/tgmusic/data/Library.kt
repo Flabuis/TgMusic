@@ -1,0 +1,162 @@
+package com.flabuis.tgmusic.data
+
+import android.content.Context
+import com.flabuis.tgmusic.td.Td
+import com.flabuis.tgmusic.td.TdException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import org.drinkless.tdlib.TdApi
+import java.util.concurrent.ConcurrentHashMap
+
+data class Channel(val id: Long, val title: String, val isOwner: Boolean)
+
+data class Track(
+    val chatId: Long,
+    val messageId: Long,
+    val fileId: Int,
+    val title: String,
+    val artist: String,
+    val duration: Int,
+    val size: Long,
+) {
+    /** Unique id used by the player: chatId_messageId_fileId */
+    val mediaId: String get() = "${chatId}_${messageId}_$fileId"
+}
+
+/** Which channels are playlists, and loading tracks from them. */
+object Library {
+    private const val PREFS = "library"
+    private lateinit var ctx: Context
+
+    private val _selected = MutableStateFlow<List<Channel>>(emptyList())
+    /** Channels the user picked as playlists. */
+    val selected: StateFlow<List<Channel>> = _selected
+
+    private val trackCache = ConcurrentHashMap<Long, List<Track>>()
+
+    fun init(context: Context) {
+        ctx = context.applicationContext
+        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val raw = prefs.getStringSet("channels", emptySet()) ?: emptySet()
+        // stored as "id|owner|title"
+        _selected.value = raw.mapNotNull { line ->
+            val parts = line.split("|", limit = 3)
+            val id = parts.getOrNull(0)?.toLongOrNull() ?: return@mapNotNull null
+            Channel(id, parts.getOrNull(2) ?: "", parts.getOrNull(1) == "1")
+        }.sortedBy { it.title.lowercase() }
+    }
+
+    fun setSelected(channels: List<Channel>) {
+        val sorted = channels.sortedBy { it.title.lowercase() }
+        _selected.value = sorted
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putStringSet("channels", sorted.map { "${it.id}|${if (it.isOwner) 1 else 0}|${it.title}" }.toSet())
+            .apply()
+    }
+
+    fun clear() {
+        trackCache.clear()
+        setSelected(emptyList())
+    }
+
+    /** All channels where the user is the owner or an admin. Owners first. */
+    suspend fun loadMyChannels(): List<Channel> {
+        loadAllChats(TdApi.ChatListMain())
+        loadAllChats(TdApi.ChatListArchive())
+        val ids = LinkedHashSet<Long>()
+        ids += Td.send(TdApi.GetChats(TdApi.ChatListMain(), 2000)).chatIds.toList()
+        ids += Td.send(TdApi.GetChats(TdApi.ChatListArchive(), 2000)).chatIds.toList()
+
+        val result = mutableListOf<Channel>()
+        for (id in ids) {
+            val chat = try { Td.send(TdApi.GetChat(id)) } catch (e: TdException) { continue }
+            val type = chat.type as? TdApi.ChatTypeSupergroup ?: continue
+            if (!type.isChannel) continue
+            val sg = try { Td.send(TdApi.GetSupergroup(type.supergroupId)) } catch (e: TdException) { continue }
+            when (sg.status) {
+                is TdApi.ChatMemberStatusCreator -> result += Channel(chat.id, chat.title, true)
+                is TdApi.ChatMemberStatusAdministrator -> result += Channel(chat.id, chat.title, false)
+                else -> {}
+            }
+        }
+        return result.sortedWith(compareBy({ !it.isOwner }, { it.title.lowercase() }))
+    }
+
+    private suspend fun loadAllChats(list: TdApi.ChatList) {
+        repeat(30) {
+            try {
+                Td.send(TdApi.LoadChats(list, 200))
+            } catch (e: TdException) {
+                return // 404 = everything is loaded
+            }
+        }
+    }
+
+    fun cachedTracks(chatId: Long): List<Track>? = trackCache[chatId]
+
+    /** All audio in a channel, newest first. Includes mp3/flac etc. sent as files. */
+    suspend fun loadTracks(chatId: Long, force: Boolean = false): List<Track> {
+        if (!force) trackCache[chatId]?.let { return it }
+        val tracks = mutableListOf<Track>()
+        collect(chatId, TdApi.SearchMessagesFilterAudio(), tracks)
+        collect(chatId, TdApi.SearchMessagesFilterDocument(), tracks)
+        val result = tracks.distinctBy { it.fileId }.sortedByDescending { it.messageId }
+        trackCache[chatId] = result
+        return result
+    }
+
+    private suspend fun collect(chatId: Long, filter: TdApi.SearchMessagesFilter, out: MutableList<Track>) {
+        var from = 0L
+        repeat(500) { // up to 50 000 messages
+            val found = Td.send(
+                TdApi.SearchChatMessages(chatId, null, "", null, from, 0, 100, filter)
+            )
+            for (m in found.messages) toTrack(m)?.let { out += it }
+            if (found.nextFromMessageId == 0L || found.messages.isEmpty()) return
+            from = found.nextFromMessageId
+        }
+    }
+
+    private fun toTrack(m: TdApi.Message): Track? {
+        return when (val c = m.content) {
+            is TdApi.MessageAudio -> {
+                val a = c.audio
+                Track(
+                    chatId = m.chatId,
+                    messageId = m.id,
+                    fileId = a.audio.id,
+                    title = a.title.ifBlank { stripExt(a.fileName).ifBlank { "Без названия" } },
+                    artist = a.performer.ifBlank { "Неизвестен" },
+                    duration = a.duration,
+                    size = a.audio.size.takeIf { it > 0 } ?: a.audio.expectedSize,
+                )
+            }
+            is TdApi.MessageDocument -> {
+                val d = c.document
+                if (!d.mimeType.startsWith("audio/") && !isAudioName(d.fileName)) return null
+                val (artist, title) = splitName(stripExt(d.fileName))
+                Track(
+                    chatId = m.chatId,
+                    messageId = m.id,
+                    fileId = d.document.id,
+                    title = title,
+                    artist = artist,
+                    duration = 0,
+                    size = d.document.size.takeIf { it > 0 } ?: d.document.expectedSize,
+                )
+            }
+            else -> null
+        }
+    }
+
+    private val audioExt = setOf("mp3", "m4a", "aac", "flac", "ogg", "opus", "wav", "wma")
+    private fun isAudioName(name: String) = name.substringAfterLast('.', "").lowercase() in audioExt
+    private fun stripExt(name: String) = if ('.' in name) name.substringBeforeLast('.') else name
+
+    /** "Artist - Title" -> (Artist, Title) */
+    private fun splitName(name: String): Pair<String, String> {
+        val idx = name.indexOf(" - ")
+        return if (idx > 0) name.substring(0, idx).trim() to name.substring(idx + 3).trim()
+        else "Неизвестен" to name.ifBlank { "Без названия" }
+    }
+}

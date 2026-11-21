@@ -1,0 +1,82 @@
+package com.flabuis.tgmusic.player
+
+import android.app.PendingIntent
+import android.content.Intent
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.session.MediaSession
+import androidx.media3.session.MediaSessionService
+import com.flabuis.tgmusic.td.TgDataSource
+import com.flabuis.tgmusic.ui.MainActivity
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+
+/** Background playback: notification, lock screen and headphone buttons come from MediaSession. */
+@UnstableApi
+class PlaybackService : MediaSessionService() {
+
+    private var session: MediaSession? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        val player = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(ProgressiveMediaSource.Factory(TgDataSource.Factory()))
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .build(),
+                /* handleAudioFocus = */ true
+            )
+            .setHandleAudioBecomingNoisy(true) // pause when headphones are unplugged
+            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .build()
+
+        val openApp = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        session = MediaSession.Builder(this, player)
+            .setSessionActivity(openApp)
+            .setCallback(object : MediaSession.Callback {
+                // Items coming from a controller lose their URI, so rebuild it from mediaId.
+                override fun onAddMediaItems(
+                    mediaSession: MediaSession,
+                    controller: MediaSession.ControllerInfo,
+                    mediaItems: MutableList<MediaItem>
+                ): ListenableFuture<MutableList<MediaItem>> {
+                    val resolved = mediaItems.map { item ->
+                        val fileId = item.mediaId.substringAfterLast('_').toIntOrNull()
+                        if (fileId == null) item
+                        else item.buildUpon().setUri(TgDataSource.uriFor(fileId)).build()
+                    }.toMutableList()
+                    return Futures.immediateFuture(resolved)
+                }
+            })
+            .build()
+    }
+
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        val player = session?.player
+        if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
+            stopSelf()
+        }
+    }
+
+    override fun onDestroy() {
+        session?.run {
+            player.release()
+            release()
+        }
+        session = null
+        super.onDestroy()
+    }
+}
