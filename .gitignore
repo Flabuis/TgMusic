@@ -6,6 +6,7 @@ local.properties
 # TDLib is downloaded by CI from the TDLib release
 app/src/main/jniLibs/
 app/src/tdlib/
+app/src/main/java/org/drinkless/
 tdlib/
 tdlib.zip
 *.jks

@@ -1,6 +1,8 @@
 package com.flabuis.tgmusic.ui
 
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MaterialExpressiveTheme
+import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -21,7 +23,8 @@ private val Colors = darkColorScheme(
     onSurfaceVariant = Color(0xFF9A9AAB),
 )
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun TgMusicTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = Colors, content = content)
+    MaterialExpressiveTheme(colorScheme = Colors, motionScheme = MotionScheme.expressive(), content = content)
 }
