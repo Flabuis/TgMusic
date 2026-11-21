@@ -133,6 +133,10 @@ object PlayerConnection {
         direction = 1
     }
 
+    fun pause() {
+        controller?.pause()
+    }
+
     fun next() = withController { direction = 1; it.seekToNextMediaItem() }
     fun previous() = withController { direction = -1; it.seekToPrevious() }
 
