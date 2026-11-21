@@ -57,6 +57,20 @@ jobs:
           VERSION_CODE: ${{ github.run_number }}
         run: gradle assembleRelease --stacktrace
 
+      - name: Dump Material3 API (dev branches only)
+        if: startsWith(github.ref, 'refs/heads/dev/')
+        run: |
+          AAR=$(find ~/.gradle/caches -name 'material3-android-1.5*.aar' | head -1)
+          echo "AAR=$AAR"
+          mkdir -p /tmp/m3 && cd /tmp/m3 && unzip -oq "$AAR" classes.jar && unzip -oq classes.jar
+          ls androidx/compose/material3 | grep -iE 'wavy|loading|materialshapes|toolbar|buttongroup|flexible|ShapesKt|Typography' | head -60
+          for c in LoadingIndicatorKt WavyProgressIndicatorKt WavyProgressIndicatorDefaults MaterialShapes MaterialShapesKt ShapesKt IconButtonDefaults ButtonDefaults ButtonGroupKt ButtonGroupDefaults Typography AppBarKt SliderDefaults IconButtonKt; do
+            f=androidx/compose/material3/$c.class
+            [ -f "$f" ] || continue
+            echo "===== $c"
+            javap -public "$f" | sed -e 's/androidx.compose.runtime.Composer, int, int, int/C/g; s/androidx.compose.runtime.Composer, int, int/C/g; s/androidx.compose.runtime.Composer, int/C/g; s/androidx\.compose\.\(ui\|material3\|foundation\|runtime\)\.//g' | grep -v 'access\$' | head -120
+          done
+
       - name: Publish release
         if: github.ref == 'refs/heads/main'
         run: |
