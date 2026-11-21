@@ -9,7 +9,12 @@ import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.withFrameMillis
@@ -536,14 +541,14 @@ private fun PlaylistScreen(channel: Channel, onBack: () -> Unit) {
                             color = if (isDragging) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
                             modifier = Modifier.padding(horizontal = 8.dp).scale(scale),
                         ) {
-                            Box {
+                            Column {
                                 TrackRow(
                                     track = t,
                                     isCurrent = t.mediaId == player.mediaId,
                                     isPlaying = player.isPlaying,
-                                    // Hold: menu pops up right away. Hold and move: drag (menu closes).
-                                    // Only a short tap switches the track.
-                                    modifier = if (canReorder) Modifier.longPressDraggableHandle(
+                                    // Hold: menu opens right away. Hold and move: drag (menu closes).
+                                    // Only a short tap plays the track.
+                                    dragHandle = if (canReorder) Modifier.longPressDraggableHandle(
                                         onDragStarted = { movedDuringDrag = false },
                                         onDragStopped = {
                                             if (movedDuringDrag) tracks?.let { Library.saveOrder(channel.id, it) }
@@ -554,8 +559,12 @@ private fun PlaylistScreen(channel: Channel, onBack: () -> Unit) {
                                         menuFor = t.mediaId
                                     },
                                 ) {
-                                    val index = shown.indexOf(t)
-                                    PlayerConnection.playQueue(shown, index, shuffle = player.shuffle)
+                                    if (menuFor != null) {
+                                        menuFor = null // a tap closes an open menu first
+                                    } else {
+                                        val index = shown.indexOf(t)
+                                        PlayerConnection.playQueue(shown, index, shuffle = player.shuffle)
+                                    }
                                 }
                                 TrackMenu(
                                     track = t,
@@ -573,7 +582,7 @@ private fun PlaylistScreen(channel: Channel, onBack: () -> Unit) {
     }
 }
 
-/** Telegram-style menu on long press. */
+/** Menu on long press, opening right under the track (inline, so dragging still works). */
 @Composable
 private fun TrackMenu(
     track: Track,
@@ -582,36 +591,40 @@ private fun TrackMenu(
     onDismiss: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(20.dp),
-        offset = DpOffset(72.dp, 0.dp),
+    AnimatedVisibility(
+        visible = expanded,
+        enter = expandVertically(spring(dampingRatio = 0.7f, stiffness = 500f)) + fadeIn(),
+        exit = shrinkVertically() + fadeOut(),
     ) {
-        DropdownMenuItem(
-            text = { Text("Играть следующим") },
-            leadingIcon = { Icon(AppIcons.Next, null) },
-            onClick = { onDismiss(); PlayerConnection.playNext(track) },
-        )
-        if (isCurrent) {
-            DropdownMenuItem(
-                text = { Text("Повторить один раз") },
-                leadingIcon = { Icon(AppIcons.RepeatOne, null) },
-                onClick = { onDismiss(); PlayerConnection.repeatCurrentOnce() },
-            )
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
+        ) {
+            Column(Modifier.padding(vertical = 6.dp)) {
+                MenuRow(AppIcons.Next, "Играть следующим") { onDismiss(); PlayerConnection.playNext(track) }
+                if (isCurrent) {
+                    MenuRow(AppIcons.RepeatOne, "Повторить один раз") { onDismiss(); PlayerConnection.repeatCurrentOnce() }
+                }
+                if (PlayerConnection.isInQueue(track.mediaId)) {
+                    MenuRow(AppIcons.RemoveQueue, "Убрать из очереди") { onDismiss(); PlayerConnection.removeFromQueue(track.mediaId) }
+                }
+                MenuRow(AppIcons.Delete, "Удалить из чата", danger = true, onClick = onDelete)
+            }
         }
-        if (PlayerConnection.isInQueue(track.mediaId)) {
-            DropdownMenuItem(
-                text = { Text("Убрать из очереди") },
-                leadingIcon = { Icon(AppIcons.RemoveQueue, null) },
-                onClick = { onDismiss(); PlayerConnection.removeFromQueue(track.mediaId) },
-            )
-        }
-        DropdownMenuItem(
-            text = { Text("Удалить из чата", color = MaterialTheme.colorScheme.error) },
-            leadingIcon = { Icon(AppIcons.Delete, null, tint = MaterialTheme.colorScheme.error) },
-            onClick = onDelete,
-        )
+    }
+}
+
+@Composable
+private fun MenuRow(icon: ImageVector, text: String, danger: Boolean = false, onClick: () -> Unit) {
+    val color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, tint = color, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(14.dp))
+        Text(text, color = color, style = MaterialTheme.typography.bodyLarge)
     }
 }
 
@@ -677,12 +690,30 @@ private fun TrackRow(
     track: Track,
     isCurrent: Boolean,
     isPlaying: Boolean,
-    modifier: Modifier,
-    onLongClick: (() -> Unit)? = null,
+    dragHandle: Modifier,
+    onLongClick: () -> Unit,
     onClick: () -> Unit,
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val currentClick by rememberUpdatedState(onClick)
+    val currentLong by rememberUpdatedState(onLongClick)
     Row(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).combinedClickable(onClick = onClick, onLongClick = onLongClick)
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+            .indication(interaction, ripple())
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = { offset ->
+                        val press = PressInteraction.Press(offset)
+                        interaction.emit(press)
+                        val released = tryAwaitRelease()
+                        interaction.emit(if (released) PressInteraction.Release(press) else PressInteraction.Cancel(press))
+                    },
+                    // a long press is never a tap, so letting go doesn't switch the track
+                    onLongPress = { currentLong() },
+                    onTap = { currentClick() },
+                )
+            }
+            .then(dragHandle)
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
