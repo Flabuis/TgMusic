@@ -27,6 +27,7 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -79,6 +80,27 @@ fun SettingsScreen(onBack: () -> Unit) {
                         Spacer(Modifier.width(8.dp))
                         Text(t.title, style = MaterialTheme.typography.bodyLarge)
                     }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            val live by Settings.liveBackground.collectAsState()
+            Section("Живой фон") {
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clickable { Settings.setLiveBackground(!live) }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Фон плеера, текста и режима ожидания двигается и пульсирует под басы. " +
+                            "Цвета берутся из обложки, а в режиме ожидания всё плавно смещается, чтобы экран не выгорал.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Switch(checked = live, onCheckedChange = { Settings.setLiveBackground(it) })
                 }
             }
 

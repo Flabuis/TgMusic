@@ -73,6 +73,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.palette.graphics.Palette
 import com.flabuis.tgmusic.data.LyricLine
+import com.flabuis.tgmusic.data.Settings
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.foundation.layout.offset
 import com.flabuis.tgmusic.data.Lyrics
 import com.flabuis.tgmusic.data.LyricsState
 import com.flabuis.tgmusic.player.PlayerConnection
@@ -110,7 +116,10 @@ fun LyricsScreen(onClose: () -> Unit) {
     val pos by rememberPosition()
     val bg = rememberCoverColor(s.coverLarge ?: s.coverSmall, MaterialTheme.colorScheme.primaryContainer)
 
-    Column(Modifier.fillMaxSize().background(bg)) {
+    val live by Settings.liveBackground.collectAsState()
+    val palette = rememberCoverPalette(s.coverLarge ?: s.coverSmall, listOf(bg))
+    if (live) LiveBackground(colors = palette, base = bg, intensity = 0.45f, playing = s.isPlaying)
+    Column(Modifier.fillMaxSize().background(if (live) Color.Transparent else bg)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onClose, shapes = IconButtonDefaults.shapes()) {
                 Icon(AppIcons.Down, "Свернуть", tint = Color.White)
@@ -316,8 +325,17 @@ private fun IdleScreen(onWake: () -> Unit, enterModifier: Modifier) {
                 }
             },
     ) {
+        val live by Settings.liveBackground.collectAsState()
+        if (live) {
+            val palette = rememberCoverPalette(s.coverLarge ?: s.coverSmall, listOf(Color(0xFF4C2C8F), Color(0xFF0E4A7A)))
+            LiveBackground(colors = palette, base = Color.Black, intensity = 0.45f, playing = s.isPlaying)
+        }
+        // Text slowly wanders a few dp so no pixel stays lit in one place (OLED burn-in).
+        val drift = rememberInfiniteTransition(label = "drift")
+        val dx by drift.animateFloat(-10f, 10f, infiniteRepeatable(tween(47_000), RepeatMode.Reverse), label = "dx")
+        val dy by drift.animateFloat(-14f, 14f, infiniteRepeatable(tween(61_000), RepeatMode.Reverse), label = "dy")
         Column(
-            enterModifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 48.dp),
+            enterModifier.fillMaxSize().offset(dx.dp, dy.dp).padding(horizontal = 32.dp, vertical = 48.dp),
             verticalArrangement = Arrangement.Center,
         ) {
             Spacer(Modifier.weight(1f))

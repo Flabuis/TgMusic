@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.material3.ripple
 import androidx.compose.ui.input.pointer.pointerInput
 import com.flabuis.tgmusic.data.Downloads
+import com.flabuis.tgmusic.data.Settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -837,6 +838,11 @@ private fun NowPlayingScreen(onClose: () -> Unit, onLyrics: () -> Unit) {
     )
     val coverCorner by animateDpAsState(if (s.isPlaying) 36.dp else 64.dp, spring(dampingRatio = 0.6f), label = "coverCorner")
 
+    val live by Settings.liveBackground.collectAsState()
+    val palette = rememberCoverPalette(
+        s.coverLarge ?: s.coverSmall,
+        listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary),
+    )
     Box(
         Modifier.fillMaxSize().background(
             Brush.verticalGradient(
@@ -844,6 +850,14 @@ private fun NowPlayingScreen(onClose: () -> Unit, onLyrics: () -> Unit) {
             )
         )
     ) {
+        if (live) {
+            LiveBackground(
+                colors = palette,
+                base = MaterialTheme.colorScheme.background,
+                intensity = 0.55f,
+                playing = s.isPlaying,
+            )
+        }
         Column(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onClose, shapes = IconButtonDefaults.shapes()) { Icon(AppIcons.Down, "Свернуть") }

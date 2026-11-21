@@ -20,8 +20,18 @@ object Settings {
     private val _theme = MutableStateFlow(AppTheme.SYSTEM)
     val theme: StateFlow<AppTheme> = _theme
 
+    private val _liveBackground = MutableStateFlow(true)
+    /** Animated background that reacts to the bass. */
+    val liveBackground: StateFlow<Boolean> = _liveBackground
+
+    fun setLiveBackground(on: Boolean) {
+        _liveBackground.value = on
+        prefs().edit().putBoolean("live_bg", on).apply()
+    }
+
     fun init(context: Context) {
         ctx = context.applicationContext
+        _liveBackground.value = prefs().getBoolean("live_bg", true)
         val saved = prefs().getString("theme", null)
         _theme.value = AppTheme.entries.firstOrNull { it.name == saved } ?: AppTheme.SYSTEM
     }
