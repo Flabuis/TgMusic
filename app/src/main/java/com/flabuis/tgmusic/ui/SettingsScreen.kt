@@ -43,6 +43,9 @@ import androidx.compose.ui.unit.dp
 import com.flabuis.tgmusic.data.AppTheme
 import com.flabuis.tgmusic.data.Downloads
 import com.flabuis.tgmusic.data.Settings
+import com.flabuis.tgmusic.data.UpdateState
+import com.flabuis.tgmusic.data.Updater
+import com.flabuis.tgmusic.BuildConfig
 import kotlinx.coroutines.launch
 
 @Composable
@@ -102,6 +105,39 @@ fun SettingsScreen(onBack: () -> Unit) {
                     Spacer(Modifier.width(12.dp))
                     Switch(checked = live, onCheckedChange = { Settings.setLiveBackground(it) })
                 }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            val update by Updater.state.collectAsState()
+            Section("Обновления") {
+                Text(
+                    "Установлена версия ${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.titleMediumEmphasized,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                Text(
+                    when (val u = update) {
+                        UpdateState.Checking -> "Проверяю…"
+                        UpdateState.UpToDate -> "Это последняя версия"
+                        is UpdateState.Available -> "Есть новая версия ${u.version}, она на главном экране"
+                        is UpdateState.Downloading -> "Скачиваю ${u.version}… ${(u.progress * 100).toInt()}%"
+                        is UpdateState.Ready -> "Версия ${u.version} скачана"
+                        is UpdateState.Failed -> u.message
+                        UpdateState.Idle -> "Приложение само проверяет GitHub при запуске"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { scope.launch { Updater.check() } },
+                    enabled = update != UpdateState.Checking && update !is UpdateState.Downloading,
+                    shapes = ButtonDefaults.shapes(),
+                    colors = ButtonDefaults.filledTonalButtonColors(),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(52.dp),
+                ) { Text("Проверить обновления") }
+                Spacer(Modifier.height(12.dp))
             }
 
             Spacer(Modifier.height(16.dp))

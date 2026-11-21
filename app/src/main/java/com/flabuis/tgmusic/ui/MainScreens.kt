@@ -34,6 +34,7 @@ import androidx.compose.material3.ripple
 import androidx.compose.ui.input.pointer.pointerInput
 import com.flabuis.tgmusic.data.Downloads
 import com.flabuis.tgmusic.data.Settings
+import com.flabuis.tgmusic.data.Updater
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -134,6 +135,8 @@ fun MainApp() {
     val push: (Screen) -> Unit = { stack = stack + it }
     val pop: () -> Unit = { if (stack.size > 1) stack = stack.dropLast(1) }
     BackHandler(enabled = stack.size > 1) { pop() }
+
+    LaunchedEffect(Unit) { Updater.checkInBackground() }
 
     // Nothing picked yet: go straight to the picker.
     val selected by Library.selected.collectAsState()
@@ -257,6 +260,7 @@ private fun HomeScreen(onOpen: (Channel) -> Unit, onPick: () -> Unit, onSettings
             verticalArrangement = Arrangement.spacedBy(20.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
+            item(span = { GridItemSpan(2) }) { UpdateBanner() }
             item(span = { GridItemSpan(2) }) {
                 Button(
                     onClick = {

@@ -48,5 +48,6 @@ object AppIcons {
         "Lyrics",
         "M20,2H4C2.9,2 2,2.9 2,4v18l4,-4h14c1.1,0 2,-0.9 2,-2V4C22,2.9 21.1,2 20,2zM6,9h12v2H6V9zM14,14H6v-2h8V14zM18,8H6V6h12V8z"
     )
+    val Download = icon("Download", "M19,9h-4V3H9v6H5l7,7 7,-7zM5,18v2h14v-2H5z")
     val Down = icon("Down", "M7.41,8.59L12,13.17l4.59,-4.58L18,10l-6,6 -6,-6 1.41,-1.41z")
 }

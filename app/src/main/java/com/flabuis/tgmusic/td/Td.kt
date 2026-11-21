@@ -29,6 +29,12 @@ object ApiConfig {
 
     fun init(context: Context) {
         ctx = context.applicationContext
+        // Remember keys from a build that had them, so later builds without keys
+        // (public releases) keep working on this phone.
+        if (BuildConfig.TG_API_ID != 0 && BuildConfig.TG_API_HASH.isNotEmpty()) {
+            ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putInt("id", BuildConfig.TG_API_ID).putString("hash", BuildConfig.TG_API_HASH).apply()
+        }
         missing.value = apiId() == 0 || apiHash().isEmpty()
     }
 
