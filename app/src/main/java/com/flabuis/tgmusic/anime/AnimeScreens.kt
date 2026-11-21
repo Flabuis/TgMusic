@@ -477,7 +477,14 @@ fun AnimeVideoScreen(
     // First episode: whatever the bot opens, then jump to the saved one.
     LaunchedEffect(Unit) {
         try {
-            state = AnimeBot.watch(card)
+            val first = AnimeBot.watch(card)
+            if (first.video == null) {
+                // The bot wants a dubbing first: show the list, continue after the pick.
+                voices = first
+                busy = null
+                return@LaunchedEffect
+            }
+            state = EpisodeState(first)
             if (resume != null && state?.episode != resume.episode) goToEpisode(resume.episode)
             if (resume != null && state?.episode == resume.episode) pendingSeek = resume.positionMs
         } catch (e: Exception) {
@@ -684,32 +691,56 @@ fun AnimeVideoScreen(
 
     // Voice picker: the bot's list of dubbing studios.
     voices?.let { list ->
-        val options = list.allButtons.filter { b ->
-            b.data != null && !b.has("назад", "К аниме", "Главн", "Поиск", "Донат", "Mod", "➡", "⬅", "/")
+        val options = list.voiceOptions
+        val raw = if (options.isEmpty()) list.allButtons.filter { b ->
+            b.data != null && !b.has("назад", "Вернуться", "К аниме", "Главн", "Поиск", "Донат", "Mod", "Настро", "➡", "⬅", "/")
+        } else emptyList()
+        fun pick(button: BotButton) {
+            voices = null
+            scope.launch {
+                busy = "Включаю озвучку…"
+                try {
+                    val old = state?.video?.video?.id
+                    state = EpisodeState(AnimeBot.press(list.id, button) { it.video != null && it.video.video.id != old })
+                    val target = resume?.episode
+                    if (target != null && state?.episode != target) goToEpisode(target)
+                    if (resume != null && state?.episode == resume.episode && player.currentPosition < 1000) pendingSeek = resume.positionMs
+                } catch (e: Exception) {
+                    error = e.message
+                }
+                busy = null
+            }
         }
         AlertDialog(
-            onDismissRequest = { voices = null },
-            confirmButton = { TextButton(onClick = { voices = null }) { Text("Отмена") } },
-            title = { Text("Озвучка") },
+            onDismissRequest = { if (state != null) voices = null },
+            confirmButton = {
+                TextButton(onClick = { voices = null; if (state == null) onBack() }) { Text("Отмена") }
+            },
+            title = { Text("Выбери озвучку") },
             text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    options.forEach { b ->
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    options.forEach { o ->
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).clickable { pick(o.button) },
+                        ) {
+                            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                                Text(o.name, style = MaterialTheme.typography.titleMediumEmphasized)
+                                Text(
+                                    listOfNotNull(o.episodes?.let { "серии $it" }, o.views?.let { "👁 $it" }, o.qualities).joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                    raw.forEach { b ->
                         Text(
                             b.text,
                             style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.fillMaxWidth().clip(CircleShape).clickable {
-                                voices = null
-                                scope.launch {
-                                    busy = "Меняю озвучку…"
-                                    try {
-                                        val old = state?.video?.video?.id
-                                        state = EpisodeState(AnimeBot.press(list.id, b) { it.video != null && it.video.video.id != old })
-                                    } catch (e: Exception) {
-                                        error = e.message
-                                    }
-                                    busy = null
-                                }
-                            }.padding(horizontal = 12.dp, vertical = 12.dp),
+                            modifier = Modifier.fillMaxWidth().clip(CircleShape).clickable { pick(b) }
+                                .padding(horizontal = 12.dp, vertical = 12.dp),
                         )
                     }
                 }

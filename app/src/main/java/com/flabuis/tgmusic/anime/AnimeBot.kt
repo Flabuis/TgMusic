@@ -39,7 +39,25 @@ class BotMessage(
     val buttons: List<List<BotButton>>,
 ) {
     val allButtons: List<BotButton> get() = buttons.flatten()
+
+    /** The bot asks to pick a dubbing studio first (buttons like "🟢 1-12 🎙 NextVoice 👁 2 тыс. 📽 1080p"). */
+    val voiceOptions: List<VoiceOption>
+        get() = allButtons.filter { it.data != null && it.has("🎙") }.map { VoiceOption.parse(it) }
     fun find(vararg parts: String): BotButton? = allButtons.firstOrNull { b -> b.data != null && b.has(*parts) }
+}
+
+/** One dubbing studio from the bot's list. */
+class VoiceOption(val name: String, val episodes: String?, val views: String?, val qualities: String?, val button: BotButton) {
+    companion object {
+        fun parse(b: BotButton): VoiceOption {
+            val t = b.text
+            val name = t.substringAfter("🎙").substringBefore("👁").trim().ifBlank { t }
+            val episodes = Regex("""(\d+\s*-\s*\d+|\d+)""").find(t.substringBefore("🎙"))?.value
+            val views = t.substringAfter("👁", "").substringBefore("📽").trim().ifBlank { null }
+            val qualities = Regex("""(\d{3,4}p[,\s\dp]*)""").find(t.substringAfter("📽", ""))?.value?.trim(' ', ',')
+            return VoiceOption(name, episodes, views, qualities, b)
+        }
+    }
 }
 
 /** What's on screen while watching: the episode video plus the controls the bot offers. */
@@ -138,11 +156,18 @@ object AnimeBot {
         }
     }
 
-    /** Presses "Смотреть" on the card: the bot sends (or turns the card into) the episode video. */
-    suspend fun watch(card: BotMessage): EpisodeState {
+    /**
+     * Presses "Смотреть" on the card. The bot answers with the episode video, or first asks
+     * which dubbing to use (then the answer has [BotMessage.voiceOptions]).
+     */
+    suspend fun watch(card: BotMessage): BotMessage {
         val button = card.find("Смотреть") ?: error("Нет кнопки «Смотреть»")
-        return EpisodeState(press(card.id, button) { it.video != null })
+        return press(card.id, button) { it.video != null || it.voiceOptions.isNotEmpty() }
     }
+
+    /** Picks a dubbing from the bot's list and waits for the video. */
+    suspend fun chooseVoice(list: BotMessage, option: VoiceOption): EpisodeState =
+        EpisodeState(press(list.id, option.button) { it.video != null })
 
     /**
      * Presses a button and waits for the bot's answer: the same message edited, or a new one.
