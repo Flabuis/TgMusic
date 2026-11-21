@@ -265,7 +265,7 @@ private suspend fun sendAll(
             val msg = Td.send(TdApi.SendMessage(chat.id, null, null, null, null, content))
             // Wait for the upload to finish (or fail). Big files on slow internet can take a while.
             val result = withTimeoutOrNull(10 * 60_000L) {
-                while (msg.id !in results) delay(200)
+                while (!results.containsKey(msg.id)) delay(200)
                 results[msg.id]
             }
             if (result == "") sent++ else failed++
