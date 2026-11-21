@@ -52,8 +52,14 @@ object Settings {
     fun setIdleBrightness(v: Float) { _idleBrightness.value = v; prefs().edit().putFloat("idle_brightness", v).apply() }
     fun setLyricsColor(argb: Int) { _lyricsColor.value = argb; prefs().edit().putInt("lyrics_color", argb).apply() }
 
+    private val _bassVibration = MutableStateFlow(false)
+    /** Phone vibrates on bass hits, stronger bass = stronger buzz. Off by default. */
+    val bassVibration: StateFlow<Boolean> = _bassVibration
+    fun setBassVibration(on: Boolean) { _bassVibration.value = on; prefs().edit().putBoolean("bass_vibration", on).apply() }
+
     fun init(context: Context) {
         ctx = context.applicationContext
+        _bassVibration.value = prefs().getBoolean("bass_vibration", false)
         _liveBrightness.value = prefs().getFloat("live_brightness", 1f)
         _idleBrightness.value = prefs().getFloat("idle_brightness", 1f)
         _lyricsColor.value = prefs().getInt("lyrics_color", 0xFFFFFFFF.toInt())

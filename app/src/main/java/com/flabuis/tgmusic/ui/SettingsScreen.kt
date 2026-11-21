@@ -160,6 +160,26 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             Spacer(Modifier.height(16.dp))
 
+            val buzz by Settings.bassVibration.collectAsState()
+            Section("Вибрация под басы") {
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clickable { Settings.setBassVibration(!buzz) }
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Телефон отдаёт в руку на каждый удар баса: чем сильнее бас, тем сильнее вибрация.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Switch(checked = buzz, onCheckedChange = { Settings.setBassVibration(it) })
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
             val lyricsColor by Settings.lyricsColor.collectAsState()
             Section("Цвет текста песни") {
                 Text(

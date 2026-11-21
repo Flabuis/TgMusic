@@ -4,6 +4,11 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.os.VibrationAttributes
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -111,6 +116,48 @@ class PlaybackService : MediaSessionService() {
             .build()
 
         watchForCrossfade()
+        vibrateWithBass()
+    }
+
+    // ---------- Bass vibration ----------
+
+    /** Buzzes on each bass hit; the harder the kick, the stronger the buzz. */
+    private fun vibrateWithBass() {
+        val vibrator = if (Build.VERSION.SDK_INT >= 31) {
+            (getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
+        } else {
+            @Suppress("DEPRECATION") getSystemService(VIBRATOR_SERVICE) as Vibrator
+        }
+        if (!vibrator.hasVibrator()) return
+        scope.launch {
+            var prev = 0f
+            var lastBuzz = 0L
+            while (isActive) {
+                delay(15)
+                if (!Settings.bassVibration.value || session?.player?.isPlaying != true) {
+                    prev = 0f
+                    continue
+                }
+                val bass = BassMeter.bass
+                val now = System.currentTimeMillis()
+                // a hit = bass jumps up sharply (not just stays loud)
+                if (bass > 0.3f && bass - prev > 0.15f && now - lastBuzz > 110) {
+                    lastBuzz = now
+                    val ms = (18 + bass * 32).toLong()
+                    val effect = if (vibrator.hasAmplitudeControl()) {
+                        VibrationEffect.createOneShot(ms, (40 + bass * 215).toInt().coerceIn(1, 255))
+                    } else {
+                        VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE)
+                    }
+                    if (Build.VERSION.SDK_INT >= 33) {
+                        vibrator.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_MEDIA))
+                    } else {
+                        @Suppress("DEPRECATION") vibrator.vibrate(effect)
+                    }
+                }
+                prev = bass
+            }
+        }
     }
 
     // ---------- Crossfade ----------
