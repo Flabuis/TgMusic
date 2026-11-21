@@ -126,7 +126,9 @@ class PlaybackService : MediaSessionService() {
                 if (!p.isPlaying || p.repeatMode == Player.REPEAT_MODE_ONE || !p.hasNextMediaItem()) continue
                 val duration = p.duration
                 if (duration == C.TIME_UNSET || duration < fadeMs * 3) continue
-                if (duration - p.currentPosition <= fadeMs) startCrossfade(p, fadeMs)
+                val remaining = duration - p.currentPosition
+                // fade exactly over what's left, so the old track ends as the fade ends
+                if (remaining <= fadeMs) startCrossfade(p, remaining.coerceAtLeast(500))
             }
         }
     }
@@ -147,6 +149,15 @@ class PlaybackService : MediaSessionService() {
         next.volume = 0f
         next.prepare()
 
+        // The old player must only finish its current song and then stop. Without this it
+        // moved on to the next song by itself, and you heard that song start a second time.
+        old.removeListener(listener)
+        val current = old.currentMediaItemIndex
+        if (current + 1 < old.mediaItemCount) old.removeMediaItems(current + 1, old.mediaItemCount)
+        if (current > 0) old.removeMediaItems(0, current)
+        old.shuffleModeEnabled = false
+        old.repeatMode = Player.REPEAT_MODE_OFF
+
         // Only the new player keeps audio focus; the old one just finishes quietly.
         old.setAudioAttributes(musicAttributes, false)
         old.setHandleAudioBecomingNoisy(false)
@@ -166,7 +177,6 @@ class PlaybackService : MediaSessionService() {
                 delay(40)
             }
             next.volume = 1f
-            old.removeListener(listener)
             old.release()
             fadingOut = null
         }
