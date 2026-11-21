@@ -7,7 +7,12 @@ import android.view.WindowManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -118,7 +123,7 @@ fun LyricsScreen(onClose: () -> Unit) {
 
     val live by Settings.liveBackground.collectAsState()
     val palette = rememberCoverPalette(s.coverLarge ?: s.coverSmall, listOf(bg))
-    if (live) LiveBackground(colors = palette, base = bg, intensity = 0.45f, playing = s.isPlaying)
+    if (live) LiveBackground(colors = palette, base = bg, intensity = 0.65f, playing = s.isPlaying)
     Column(Modifier.fillMaxSize().background(if (live) Color.Transparent else bg)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onClose, shapes = IconButtonDefaults.shapes()) {
@@ -176,8 +181,13 @@ private fun SyncedLyrics(lines: List<LyricLine>, pos: Long) {
     LaunchedEffect(dragged) { if (dragged) lastUserScroll = System.currentTimeMillis() }
 
     // Follow the song, unless the user scrolled by hand in the last few seconds.
+    // Glide to the line with a smooth curve instead of jumping.
     LaunchedEffect(active) {
-        if (active >= 0 && System.currentTimeMillis() - lastUserScroll > 3000) {
+        if (active < 0 || System.currentTimeMillis() - lastUserScroll <= 3000) return@LaunchedEffect
+        val info = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == active }
+        if (info != null) {
+            listState.animateScrollBy(info.offset.toFloat(), tween(750, easing = FastOutSlowInEasing))
+        } else {
             listState.animateScrollToItem(active)
         }
     }
@@ -190,16 +200,35 @@ private fun SyncedLyrics(lines: List<LyricLine>, pos: Long) {
         ) {
             itemsIndexed(lines) { index, line ->
                 val isActive = index == active
+                val distance = if (active < 0) index + 1 else kotlin.math.abs(index - active)
+                // Spotify look: sung line white, already sung dimmed, upcoming dark.
                 val color by animateColorAsState(
                     when {
                         isActive -> Color.White
-                        index < active -> Color.White.copy(alpha = 0.55f)
-                        else -> Color.Black.copy(alpha = 0.45f)
+                        index < active -> Color.White.copy(alpha = 0.5f)
+                        else -> Color.Black.copy(alpha = 0.55f)
                     },
-                    tween(350),
+                    tween(450),
                     label = "lineColor",
                 )
-                val scale by animateFloatAsState(if (isActive) 1f else 0.94f, spring(dampingRatio = 0.6f), label = "lineScale")
+                val scale by animateFloatAsState(
+                    if (isActive) 1f else 0.93f,
+                    spring(dampingRatio = 0.55f, stiffness = 260f),
+                    label = "lineScale",
+                )
+                // Lines further from the current one get softly blurred (Android 12+).
+                val blur by animateDpAsState(
+                    when (distance) {
+                        0 -> 0.dp
+                        1 -> 1.5.dp
+                        2 -> 2.5.dp
+                        else -> 3.5.dp
+                    },
+                    tween(500),
+                    label = "lineBlur",
+                )
+                // Active line rises a little into place.
+                val lift by animateFloatAsState(if (isActive) 0f else 6f, spring(dampingRatio = 0.6f), label = "lineLift")
                 Text(
                     line.text.ifBlank { "♪" },
                     color = color,
@@ -212,8 +241,10 @@ private fun SyncedLyrics(lines: List<LyricLine>, pos: Long) {
                         .graphicsLayer {
                             scaleX = scale
                             scaleY = scale
+                            translationY = lift * density
                             transformOrigin = TransformOrigin(0f, 0.5f)
                         }
+                        .blur(blur, BlurredEdgeTreatment.Unbounded)
                         .padding(horizontal = 24.dp, vertical = 10.dp),
                 )
             }
