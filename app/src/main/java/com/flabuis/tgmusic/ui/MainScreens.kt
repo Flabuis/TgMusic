@@ -1,6 +1,18 @@
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+
 package com.flabuis.tgmusic.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,8 +29,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -27,19 +43,27 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LargeFlexibleTopAppBar
+import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
@@ -54,10 +78,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
@@ -69,6 +97,8 @@ import com.flabuis.tgmusic.td.Td
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.drinkless.tdlib.TdApi
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 private sealed interface Screen {
     data object Home : Screen
@@ -85,24 +115,52 @@ fun MainApp() {
     val pop: () -> Unit = { if (stack.size > 1) stack = stack.dropLast(1) }
     BackHandler(enabled = stack.size > 1) { pop() }
 
-    // Nothing picked yet: go straight to the channel picker.
+    // Nothing picked yet: go straight to the picker.
     val selected by Library.selected.collectAsState()
     LaunchedEffect(Unit) {
         if (selected.isEmpty()) stack = listOf(Screen.Home, Screen.Picker)
     }
 
     Column(Modifier.fillMaxSize()) {
-        Box(Modifier.weight(1f)) {
-            when (current) {
+        AnimatedContent(
+            targetState = current,
+            transitionSpec = {
+                if (targetState == Screen.NowPlaying) {
+                    (slideInVertically { it / 3 } + fadeIn()) togetherWith fadeOut()
+                } else if (initialState == Screen.NowPlaying) {
+                    fadeIn() togetherWith (slideOutVertically { it / 3 } + fadeOut())
+                } else {
+                    (slideInHorizontally { it / 5 } + fadeIn()) togetherWith fadeOut()
+                }
+            },
+            modifier = Modifier.weight(1f),
+            label = "screen",
+        ) { screen ->
+            when (screen) {
                 Screen.Home -> HomeScreen(onOpen = { push(Screen.Playlist(it)) }, onPick = { push(Screen.Picker) })
                 Screen.Picker -> PickerScreen(onDone = pop)
-                is Screen.Playlist -> PlaylistScreen(current.channel, onBack = pop)
+                is Screen.Playlist -> PlaylistScreen(screen.channel, onBack = pop)
                 Screen.NowPlaying -> NowPlayingScreen(onClose = pop)
             }
         }
         if (current != Screen.NowPlaying) MiniPlayer(onOpen = { push(Screen.NowPlaying) })
     }
 }
+
+/** Expressive shapes for playlist avatars, picked per item. */
+private val avatarShapes = listOf(
+    MaterialShapes.Cookie9Sided,
+    MaterialShapes.Clover4Leaf,
+    MaterialShapes.Sunny,
+    MaterialShapes.SoftBurst,
+    MaterialShapes.Cookie6Sided,
+    MaterialShapes.Flower,
+    MaterialShapes.Pentagon,
+    MaterialShapes.Cookie12Sided,
+)
+
+@Composable
+private fun avatarShape(index: Int): Shape = avatarShapes[Math.floorMod(index, avatarShapes.size)].toShape()
 
 // ---------- Home ----------
 
@@ -114,20 +172,28 @@ private fun HomeScreen(onOpen: (Channel) -> Unit, onPick: () -> Unit) {
     var shuffling by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
-        TopBar("TgMusic") {
-            Box {
-                IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Меню") }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text("Выбрать чаты с музыкой") }, onClick = { menu = false; onPick() })
-                    DropdownMenuItem(text = { Text("Выйти из аккаунта") }, onClick = {
-                        menu = false
-                        PlayerConnection.stop()
-                        Library.clear()
-                        Td.sendAsync(TdApi.LogOut())
-                    })
+        LargeFlexibleTopAppBar(
+            title = { Text("TgMusic") },
+            subtitle = {
+                Text(if (channels.isEmpty()) "Музыка из твоего Telegram" else "${channels.size} ${playlistsWord(channels.size)}")
+            },
+            actions = {
+                Box {
+                    IconButton(onClick = { menu = true }, shapes = IconButtonDefaults.shapes()) {
+                        Icon(Icons.Default.MoreVert, "Меню")
+                    }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(text = { Text("Выбрать чаты с музыкой") }, onClick = { menu = false; onPick() })
+                        DropdownMenuItem(text = { Text("Выйти из аккаунта") }, onClick = {
+                            menu = false
+                            PlayerConnection.stop()
+                            Library.clear()
+                            Td.sendAsync(TdApi.LogOut())
+                        })
+                    }
                 }
-            }
-        }
+            },
+        )
 
         if (channels.isEmpty()) {
             Column(
@@ -135,63 +201,107 @@ private fun HomeScreen(onOpen: (Channel) -> Unit, onPick: () -> Unit) {
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("Плейлистов пока нет", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
-                Text("Выбери каналы или группы, где лежит музыка", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(16.dp))
-                Button(onClick = onPick) { Text("Выбрать чаты с музыкой") }
+                Box(
+                    Modifier.size(120.dp).clip(MaterialShapes.Cookie9Sided.toShape())
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(AppIcons.Note, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+                Spacer(Modifier.height(20.dp))
+                Text("Плейлистов пока нет", style = MaterialTheme.typography.titleLargeEmphasized)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Выбери каналы или группы, где лежит музыка",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(20.dp))
+                Button(onClick = onPick, shapes = ButtonDefaults.shapes()) { Text("Выбрать чаты") }
             }
             return@Column
         }
 
-        Button(
-            onClick = {
-                shuffling = true
-                scope.launch {
-                    try {
-                        val all = channels.flatMap { Library.loadTracks(it.id) }.distinctBy { it.fileId }
-                        if (all.isNotEmpty()) PlayerConnection.playQueue(all, all.indices.random(), shuffle = true)
-                    } catch (_: Exception) {
-                    } finally {
-                        shuffling = false
-                    }
-                }
-            },
-            enabled = !shuffling,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).height(52.dp),
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            contentPadding = PaddingValues(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier.fillMaxSize(),
         ) {
-            if (shuffling) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-            else {
-                Icon(AppIcons.Shuffle, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Перемешать всё")
-            }
-        }
-
-        LazyColumn(contentPadding = PaddingValues(bottom = 8.dp)) {
-            items(channels, key = { it.id }) { ch ->
-                Row(
-                    Modifier.fillMaxWidth().clickable { onOpen(ch) }.padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+            item(span = { GridItemSpan(2) }) {
+                Button(
+                    onClick = {
+                        shuffling = true
+                        scope.launch {
+                            try {
+                                val all = channels.flatMap { Library.loadTracks(it.id) }.distinctBy { it.fileId }
+                                if (all.isNotEmpty()) PlayerConnection.playQueue(all, all.indices.random(), shuffle = true)
+                            } catch (_: Exception) {
+                            } finally {
+                                shuffling = false
+                            }
+                        }
+                    },
+                    enabled = !shuffling,
+                    shapes = ButtonDefaults.shapes(),
+                    modifier = Modifier.fillMaxWidth().height(64.dp),
                 ) {
-                    Cover(ch.title, Modifier.size(56.dp))
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(ch.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        val count = Library.cachedTracks(ch.id)?.size
-                        Text(
-                            if (count != null) "$count ${tracksWord(count)}" else "Плейлист",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                    if (shuffling) {
+                        LoadingIndicator(Modifier.size(32.dp), color = MaterialTheme.colorScheme.onPrimary)
+                    } else {
+                        Icon(AppIcons.Shuffle, null)
+                        Spacer(Modifier.width(10.dp))
+                        Text("Перемешать всё", style = MaterialTheme.typography.titleMediumEmphasized)
                     }
                 }
+            }
+            itemsIndexed(channels, key = { _, ch -> ch.id }) { index, ch ->
+                PlaylistCard(ch, avatarShape(index)) { onOpen(ch) }
             }
         }
     }
 }
 
-// ---------- Channel picker ----------
+@Composable
+private fun PlaylistCard(ch: Channel, shape: Shape, onClick: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).clickable(onClick = onClick).padding(4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        ChatAvatar(ch, Modifier.fillMaxWidth().aspectRatio(1f), shape)
+        Spacer(Modifier.height(10.dp))
+        Text(
+            ch.title,
+            style = MaterialTheme.typography.titleMediumEmphasized,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        val count = Library.cachedTracks(ch.id)?.size
+        Text(
+            if (count != null) "$count ${tracksWord(count)}" else if (ch.isGroup) "Группа" else "Канал",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+/** Telegram avatar of a chat, or a colored letter if it has none. */
+@Composable
+private fun ChatAvatar(ch: Channel, modifier: Modifier, shape: Shape) {
+    var photo by remember(ch.id) { mutableStateOf(Library.cachedPhoto(ch.id)) }
+    LaunchedEffect(ch.id) { if (photo == null) photo = Library.chatPhoto(ch.id) }
+    val p = photo
+    TdImage(
+        fileId = p?.big?.id ?: p?.small?.id,
+        mini = p?.minithumbnail?.data,
+        modifier = modifier.clip(shape),
+    ) {
+        LetterCover(ch.title, Modifier.fillMaxSize())
+    }
+}
+
+// ---------- Picker ----------
 
 @Composable
 private fun PickerScreen(onDone: () -> Unit) {
@@ -212,32 +322,34 @@ private fun PickerScreen(onDone: () -> Unit) {
         Text(
             "Отметь, где лежит музыка — каждый чат станет плейлистом",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
         )
         val list = channels
         when {
-            error != null -> MessageScreen("Не получилось загрузить каналы: $error")
+            error != null -> MessageScreen("Не получилось загрузить: $error")
             list == null -> LoadingScreen("Ищу твои каналы и группы…")
             list.isEmpty() -> MessageScreen("Не нашёл каналов и групп, где ты владелец или админ")
             else -> {
-                LazyColumn(Modifier.weight(1f)) {
+                LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(vertical = 8.dp)) {
                     items(list, key = { it.id }) { ch ->
                         val checked = ch.id in picked
                         Row(
                             Modifier.fillMaxWidth()
                                 .clickable { if (checked) picked.remove(ch.id) else picked.add(ch.id) }
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Checkbox(checked = checked, onCheckedChange = { if (it) picked.add(ch.id) else picked.remove(ch.id) })
+                            ChatAvatar(ch, Modifier.size(48.dp), CircleShape)
+                            Spacer(Modifier.width(14.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(ch.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(ch.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLargeEmphasized)
                                 Text(
                                     (if (ch.isGroup) "группа" else "канал") + if (ch.isOwner) " · твоя" else " · ты админ",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+                            Checkbox(checked = checked, onCheckedChange = { if (it) picked.add(ch.id) else picked.remove(ch.id) })
                         }
                     }
                 }
@@ -246,8 +358,9 @@ private fun PickerScreen(onDone: () -> Unit) {
                         Library.setSelected(list.filter { it.id in picked })
                         onDone()
                     },
-                    modifier = Modifier.fillMaxWidth().padding(16.dp).height(52.dp),
-                ) { Text("Готово (${picked.size})") }
+                    shapes = ButtonDefaults.shapes(),
+                    modifier = Modifier.fillMaxWidth().padding(16.dp).height(60.dp),
+                ) { Text("Готово (${picked.size})", style = MaterialTheme.typography.titleMediumEmphasized) }
             }
         }
     }
@@ -263,7 +376,9 @@ private fun PlaylistScreen(channel: Channel, onBack: () -> Unit) {
     var query by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
     var reload by remember { mutableStateOf(0) }
+    var menu by remember { mutableStateOf(false) }
     val player by PlayerConnection.state.collectAsState()
+    val haptic = LocalHapticFeedback.current
 
     LaunchedEffect(channel.id, reload) {
         if (tracks != null && reload == 0) return@LaunchedEffect
@@ -278,62 +393,91 @@ private fun PlaylistScreen(channel: Channel, onBack: () -> Unit) {
     }
 
     val all = tracks.orEmpty()
-    val shown = if (query.isBlank()) all else all.filter {
+    val canReorder = query.isBlank()
+    val shown = if (canReorder) all else all.filter {
         it.title.contains(query, ignoreCase = true) || it.artist.contains(query, ignoreCase = true)
     }
 
+    val listState = rememberLazyListState()
+    val reorderState = rememberReorderableLazyListState(listState) { from, to ->
+        val list = tracks ?: return@rememberReorderableLazyListState
+        val fromIndex = list.indexOfFirst { it.mediaId == from.key }
+        val toIndex = list.indexOfFirst { it.mediaId == to.key }
+        if (fromIndex >= 0 && toIndex >= 0) {
+            tracks = list.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+            haptic.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
-        TopBar(channel.title, onBack = onBack) {
-            IconButton(onClick = { searching = !searching; if (!searching) query = "" }) {
+        TopBar("", onBack = onBack) {
+            IconButton(onClick = { searching = !searching; if (!searching) query = "" }, shapes = IconButtonDefaults.shapes()) {
                 Icon(Icons.Default.Search, "Поиск")
             }
-            IconButton(onClick = { reload++ }, enabled = !loading) {
+            IconButton(onClick = { reload++ }, enabled = !loading, shapes = IconButtonDefaults.shapes()) {
                 Icon(Icons.Default.Refresh, "Обновить")
             }
+            Box {
+                IconButton(onClick = { menu = true }, shapes = IconButtonDefaults.shapes()) {
+                    Icon(Icons.Default.MoreVert, "Меню")
+                }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Сбросить свой порядок") },
+                        enabled = Library.hasCustomOrder(channel.id),
+                        onClick = {
+                            menu = false
+                            Library.resetOrder(channel.id)
+                            tracks = Library.cachedTracks(channel.id)
+                        },
+                    )
+                }
+            }
         }
-        if (searching) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text("Название или исполнитель") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-            )
-        }
+
         when {
             loading && all.isEmpty() -> LoadingScreen("Собираю треки…")
             error != null && all.isEmpty() -> MessageScreen("Ошибка: $error")
-            all.isEmpty() -> MessageScreen("Здесь нет аудио")
-            else -> {
-                if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Button(onClick = { PlayerConnection.playQueue(shown, 0) }, modifier = Modifier.weight(1f)) {
-                        Icon(AppIcons.Play, null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Слушать")
-                    }
-                    FilledTonalButton(
-                        onClick = { if (shown.isNotEmpty()) PlayerConnection.playQueue(shown, shown.indices.random(), shuffle = true) },
-                        modifier = Modifier.weight(1f),
-                    ) {
-                        Icon(AppIcons.Shuffle, null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Вперемешку")
+            all.isEmpty() && !loading -> MessageScreen("Здесь нет аудио")
+            else -> LazyColumn(state = listState, modifier = Modifier.weight(1f), contentPadding = PaddingValues(bottom = 12.dp)) {
+                item(key = "header") {
+                    PlaylistHeader(channel, shown, loading)
+                }
+                if (searching) {
+                    item(key = "search") {
+                        OutlinedTextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            placeholder = { Text("Название или исполнитель") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(28.dp),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        )
                     }
                 }
-                Text(
-                    "${shown.size} ${tracksWord(shown.size)}",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-                LazyColumn(Modifier.weight(1f)) {
-                    itemsIndexed(shown, key = { _, t -> t.mediaId }) { index, t ->
-                        TrackRow(t, isCurrent = t.mediaId == player.mediaId) {
-                            PlayerConnection.playQueue(shown, index, shuffle = player.shuffle)
+                items(shown, key = { it.mediaId }) { t ->
+                    ReorderableItem(reorderState, key = t.mediaId, enabled = canReorder) { isDragging ->
+                        val elevation by animateDpAsState(if (isDragging) 10.dp else 0.dp, label = "drag")
+                        val scale by animateFloatAsState(if (isDragging) 1.03f else 1f, spring(dampingRatio = 0.5f), label = "dragScale")
+                        Surface(
+                            shadowElevation = elevation,
+                            shape = RoundedCornerShape(20.dp),
+                            color = if (isDragging) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent,
+                            modifier = Modifier.padding(horizontal = 8.dp).scale(scale),
+                        ) {
+                            TrackRow(
+                                track = t,
+                                isCurrent = t.mediaId == player.mediaId,
+                                isPlaying = player.isPlaying,
+                                modifier = Modifier.longPressDraggableHandle(
+                                    enabled = canReorder,
+                                    onDragStarted = { haptic.performHapticFeedback(HapticFeedbackType.LongPress) },
+                                    onDragStopped = { tracks?.let { Library.saveOrder(channel.id, it) } },
+                                ),
+                            ) {
+                                val index = shown.indexOf(t)
+                                PlayerConnection.playQueue(shown, index, shuffle = player.shuffle)
+                            }
                         }
                     }
                 }
@@ -343,39 +487,101 @@ private fun PlaylistScreen(channel: Channel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun TrackRow(track: Track, isCurrent: Boolean, onClick: () -> Unit) {
+private fun PlaylistHeader(channel: Channel, shown: List<Track>, loading: Boolean) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        ChatAvatar(channel, Modifier.size(168.dp), MaterialShapes.Cookie12Sided.toShape())
+        Spacer(Modifier.height(16.dp))
+        Text(
+            channel.title,
+            style = MaterialTheme.typography.headlineMediumEmphasized,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            "${shown.size} ${tracksWord(shown.size)} · зажми трек, чтобы перетащить",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+        )
+        if (loading) {
+            Spacer(Modifier.height(8.dp))
+            LinearWavyProgressIndicator(Modifier.fillMaxWidth(0.5f))
+        }
+        Spacer(Modifier.height(16.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(
+                onClick = { PlayerConnection.playQueue(shown, 0) },
+                shapes = ButtonDefaults.shapes(),
+                modifier = Modifier.weight(1f).height(56.dp),
+            ) {
+                Icon(AppIcons.Play, null)
+                Spacer(Modifier.width(6.dp))
+                Text("Слушать", style = MaterialTheme.typography.titleMediumEmphasized)
+            }
+            Button(
+                onClick = { if (shown.isNotEmpty()) PlayerConnection.playQueue(shown, shown.indices.random(), shuffle = true) },
+                shapes = ButtonDefaults.shapes(),
+                colors = ButtonDefaults.filledTonalButtonColors(),
+                modifier = Modifier.weight(1f).height(56.dp),
+            ) {
+                Icon(AppIcons.Shuffle, null)
+                Spacer(Modifier.width(6.dp))
+                Text("Вперемешку", style = MaterialTheme.typography.titleMediumEmphasized)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+    }
+}
+
+@Composable
+private fun TrackRow(
+    track: Track,
+    isCurrent: Boolean,
+    isPlaying: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier.size(44.dp).clip(RoundedCornerShape(10.dp))
-                .background(if (isCurrent) Accent else MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(AppIcons.Note, null, tint = if (isCurrent) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
+        val coverShape = if (isCurrent) MaterialShapes.Cookie9Sided.toShape() else RoundedCornerShape(14.dp)
+        Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
+            TdImage(track.coverSmall, track.mini, Modifier.fillMaxSize().clip(coverShape), maxPx = 200) {
+                LetterCover(track.title, Modifier.fillMaxSize(), small = true)
+            }
+            if (isCurrent) {
+                Box(
+                    Modifier.fillMaxSize().clip(coverShape).background(Color.Black.copy(alpha = 0.35f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(if (isPlaying) AppIcons.Pause else AppIcons.Play, null, tint = Color.White)
+                }
+            }
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 track.title,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = if (isCurrent) Accent else MaterialTheme.colorScheme.onSurface,
-                fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                style = if (isCurrent) MaterialTheme.typography.bodyLargeEmphasized else MaterialTheme.typography.bodyLarge,
             )
             Text(
                 track.artist,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         if (track.duration > 0) {
             Text(
                 formatTime(track.duration * 1000L),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -390,7 +596,7 @@ private fun rememberPosition(): State<Long> {
     LaunchedEffect(Unit) {
         while (true) {
             pos.longValue = PlayerConnection.positionMs
-            delay(500)
+            delay(250)
         }
     }
     return pos
@@ -401,49 +607,67 @@ private fun MiniPlayer(onOpen: () -> Unit) {
     val s by PlayerConnection.state.collectAsState()
     if (!s.hasMedia) return
     val pos by rememberPosition()
+    val progress = if (s.durationMs > 0) (pos.toFloat() / s.durationMs).coerceIn(0f, 1f) else 0f
 
-    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
-        LinearProgressIndicator(
-            progress = { if (s.durationMs > 0) (pos.toFloat() / s.durationMs).coerceIn(0f, 1f) else 0f },
-            modifier = Modifier.fillMaxWidth().height(2.dp),
-            drawStopIndicator = {},
-        )
-        Row(
-            Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Cover(s.title, Modifier.size(44.dp))
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
-                Text(
-                    s.error ?: s.artist,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (s.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+    Surface(
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        shadowElevation = 6.dp,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Column(Modifier.clickable(onClick = onOpen).padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TdImage(s.coverSmall, null, Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)), maxPx = 200) {
+                    LetterCover(s.title, Modifier.fillMaxSize(), small = true)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLargeEmphasized)
+                    Text(
+                        s.error ?: s.artist,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (s.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                PlayPauseButton(s.isPlaying, s.isBuffering, size = 48)
+                IconButton(onClick = PlayerConnection::next, shapes = IconButtonDefaults.shapes()) {
+                    Icon(AppIcons.Next, "Дальше")
+                }
             }
-            PlayPauseButton(s.isPlaying, s.isBuffering, size = 44)
-            IconButton(onClick = PlayerConnection::next) { Icon(AppIcons.Next, "Дальше") }
+            Spacer(Modifier.height(6.dp))
+            LinearWavyProgressIndicator(
+                progress = { progress },
+                amplitude = { if (s.isPlaying) 1f else 0f },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+            )
         }
     }
 }
 
+/** Play button that morphs: circle when paused, rounded square when playing. */
 @Composable
 private fun PlayPauseButton(isPlaying: Boolean, isBuffering: Boolean, size: Int) {
+    val corner by animateDpAsState(
+        if (isPlaying) (size * 0.3f).dp else (size / 2f).dp,
+        spring(dampingRatio = 0.45f, stiffness = 400f),
+        label = "playCorner",
+    )
     Box(
-        Modifier.size(size.dp).clip(CircleShape).background(Accent).clickable { PlayerConnection.togglePlay() },
+        Modifier.size(size.dp).clip(RoundedCornerShape(corner))
+            .background(MaterialTheme.colorScheme.primary)
+            .clickable { PlayerConnection.togglePlay() },
         contentAlignment = Alignment.Center,
     ) {
         if (isBuffering && !isPlaying) {
-            CircularProgressIndicator(Modifier.size((size / 2).dp), color = Color.White, strokeWidth = 2.dp)
+            LoadingIndicator(Modifier.size((size * 0.7f).dp), color = MaterialTheme.colorScheme.onPrimary)
         } else {
             Icon(
                 if (isPlaying) AppIcons.Pause else AppIcons.Play,
                 if (isPlaying) "Пауза" else "Играть",
-                tint = Color.White,
-                modifier = Modifier.size((size / 2).dp),
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size((size * 0.45f).dp),
             )
         }
     }
@@ -457,79 +681,122 @@ private fun NowPlayingScreen(onClose: () -> Unit) {
 
     LaunchedEffect(s.hasMedia) { if (!s.hasMedia) onClose() }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
-        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onClose) { Icon(AppIcons.Down, "Свернуть") }
-            Text(
-                "Сейчас играет",
-                modifier = Modifier.weight(1f),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelLarge,
-            )
-        }
-        Spacer(Modifier.height(16.dp))
-        Cover(
-            s.title,
-            Modifier.weight(1f, fill = false)
-                .aspectRatio(1f, matchHeightConstraintsFirst = true)
-                .align(Alignment.CenterHorizontally),
-            iconSize = 120,
-        )
-        Spacer(Modifier.height(28.dp))
-        Text(s.title, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(4.dp))
-        Text(s.artist, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        s.error?.let {
-            Spacer(Modifier.height(4.dp))
-            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-        }
-        Spacer(Modifier.height(16.dp))
+    val coverScale by animateFloatAsState(
+        if (s.isPlaying) 1f else 0.86f,
+        spring(dampingRatio = 0.5f, stiffness = 300f),
+        label = "coverScale",
+    )
+    val coverCorner by animateDpAsState(if (s.isPlaying) 36.dp else 64.dp, spring(dampingRatio = 0.6f), label = "coverCorner")
 
-        val duration = s.durationMs.coerceAtLeast(1)
-        Slider(
-            value = dragging ?: (pos.toFloat() / duration).coerceIn(0f, 1f),
-            onValueChange = { dragging = it },
-            onValueChangeFinished = {
-                dragging?.let { PlayerConnection.seekTo((it * duration).toLong()) }
-                dragging = null
-            },
-            enabled = s.durationMs > 0,
-        )
-        Row(Modifier.fillMaxWidth()) {
-            val shownPos = dragging?.let { (it * duration).toLong() } ?: pos
-            Text(formatTime(shownPos), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.weight(1f))
-            Text(formatTime(s.durationMs), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Spacer(Modifier.height(16.dp))
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ToggleIcon(AppIcons.Shuffle, "Перемешать", s.shuffle, PlayerConnection::toggleShuffle)
-            IconButton(onClick = PlayerConnection::previous, modifier = Modifier.size(56.dp)) {
-                Icon(AppIcons.Previous, "Назад", Modifier.size(36.dp))
-            }
-            PlayPauseButton(s.isPlaying, s.isBuffering, size = 72)
-            IconButton(onClick = PlayerConnection::next, modifier = Modifier.size(56.dp)) {
-                Icon(AppIcons.Next, "Дальше", Modifier.size(36.dp))
-            }
-            ToggleIcon(
-                if (s.repeatMode == Player.REPEAT_MODE_ONE) AppIcons.RepeatOne else AppIcons.Repeat,
-                "Повтор",
-                s.repeatMode != Player.REPEAT_MODE_OFF,
-                PlayerConnection::cycleRepeat,
+    Box(
+        Modifier.fillMaxSize().background(
+            Brush.verticalGradient(
+                listOf(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f), MaterialTheme.colorScheme.background)
             )
+        )
+    ) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onClose, shapes = IconButtonDefaults.shapes()) { Icon(AppIcons.Down, "Свернуть") }
+                Text(
+                    "Сейчас играет",
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.labelLargeEmphasized,
+                )
+                Spacer(Modifier.width(48.dp))
+            }
+            Spacer(Modifier.height(12.dp))
+            Box(
+                Modifier.weight(1f, fill = false)
+                    .aspectRatio(1f, matchHeightConstraintsFirst = true)
+                    .align(Alignment.CenterHorizontally)
+                    .scale(coverScale),
+            ) {
+                Surface(shape = RoundedCornerShape(coverCorner), shadowElevation = 16.dp, modifier = Modifier.fillMaxSize()) {
+                    TdImage(s.coverLarge ?: s.coverSmall, null, Modifier.fillMaxSize(), maxPx = 1080) {
+                        LetterCover(s.title, Modifier.fillMaxSize())
+                    }
+                }
+            }
+            Spacer(Modifier.height(28.dp))
+            Text(s.title, style = MaterialTheme.typography.headlineSmallEmphasized, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                s.artist,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            s.error?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+            Spacer(Modifier.height(16.dp))
+
+            val duration = s.durationMs.coerceAtLeast(1)
+            val value = dragging ?: (pos.toFloat() / duration).coerceIn(0f, 1f)
+            Slider(
+                value = value,
+                onValueChange = { dragging = it },
+                onValueChangeFinished = {
+                    dragging?.let { PlayerConnection.seekTo((it * duration).toLong()) }
+                    dragging = null
+                },
+                enabled = s.durationMs > 0,
+                track = {
+                    LinearWavyProgressIndicator(
+                        progress = { value },
+                        amplitude = { if (s.isPlaying && dragging == null) 1f else 0f },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                },
+            )
+            Row(Modifier.fillMaxWidth()) {
+                val shownPos = dragging?.let { (it * duration).toLong() } ?: pos
+                Text(formatTime(shownPos), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.weight(1f))
+                Text(formatTime(s.durationMs), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Spacer(Modifier.height(16.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ToggleIcon(AppIcons.Shuffle, "Перемешать", s.shuffle, PlayerConnection::toggleShuffle)
+                FilledTonalIconButton(
+                    onClick = PlayerConnection::previous,
+                    shapes = IconButtonDefaults.shapes(),
+                    modifier = Modifier.size(64.dp),
+                ) { Icon(AppIcons.Previous, "Назад", Modifier.size(32.dp)) }
+                PlayPauseButton(s.isPlaying, s.isBuffering, size = 96)
+                FilledTonalIconButton(
+                    onClick = PlayerConnection::next,
+                    shapes = IconButtonDefaults.shapes(),
+                    modifier = Modifier.size(64.dp),
+                ) { Icon(AppIcons.Next, "Дальше", Modifier.size(32.dp)) }
+                ToggleIcon(
+                    if (s.repeatMode == Player.REPEAT_MODE_ONE) AppIcons.RepeatOne else AppIcons.Repeat,
+                    "Повтор",
+                    s.repeatMode != Player.REPEAT_MODE_OFF,
+                    PlayerConnection::cycleRepeat,
+                )
+            }
+            Spacer(Modifier.height(32.dp))
         }
-        Spacer(Modifier.height(24.dp))
     }
 }
 
 @Composable
 private fun ToggleIcon(icon: ImageVector, description: String, active: Boolean, onClick: () -> Unit) {
-    IconButton(onClick = onClick) {
-        Icon(icon, description, tint = if (active) Accent else MaterialTheme.colorScheme.onSurfaceVariant)
+    if (active) {
+        FilledIconButton(onClick = onClick, shapes = IconButtonDefaults.shapes()) { Icon(icon, description) }
+    } else {
+        IconButton(onClick = onClick, shapes = IconButtonDefaults.shapes()) {
+            Icon(icon, description, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -538,43 +805,47 @@ private fun ToggleIcon(icon: ImageVector, description: String, active: Boolean, 
 @Composable
 private fun TopBar(title: String, onBack: (() -> Unit)? = null, actions: @Composable () -> Unit = {}) {
     Row(
-        Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp),
+        Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onBack != null) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад") }
+            IconButton(onClick = onBack, shapes = IconButtonDefaults.shapes()) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад")
+            }
         } else {
             Spacer(Modifier.width(12.dp))
         }
         Text(
             title,
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.titleLargeEmphasized,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).padding(start = 4.dp),
         )
         actions()
     }
-    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
 }
 
-/** Placeholder cover: a gradient picked from the name, with a note on top. */
+/** Placeholder when there's no picture: a color from the name and the first letter. */
 @Composable
-private fun Cover(seed: String, modifier: Modifier, iconSize: Int = 24) {
+private fun LetterCover(seed: String, modifier: Modifier, small: Boolean = false) {
+    val scheme = MaterialTheme.colorScheme
     val palette = listOf(
-        Color(0xFF8B5CF6) to Color(0xFF22D3EE),
-        Color(0xFFF43F5E) to Color(0xFFF59E0B),
-        Color(0xFF10B981) to Color(0xFF3B82F6),
-        Color(0xFFEC4899) to Color(0xFF8B5CF6),
-        Color(0xFF6366F1) to Color(0xFF14B8A6),
+        scheme.primaryContainer to scheme.onPrimaryContainer,
+        scheme.secondaryContainer to scheme.onSecondaryContainer,
+        scheme.tertiaryContainer to scheme.onTertiaryContainer,
     )
-    val (a, b) = palette[Math.floorMod(seed.hashCode(), palette.size)]
-    Box(
-        modifier.clip(RoundedCornerShape(12.dp)).background(Brush.linearGradient(listOf(a, b))),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(AppIcons.Note, null, tint = Color.White.copy(alpha = 0.9f), modifier = Modifier.size(iconSize.dp))
+    val (bg, fg) = palette[Math.floorMod(seed.hashCode(), palette.size)]
+    Box(modifier.background(bg), contentAlignment = Alignment.Center) {
+        if (small) {
+            Icon(AppIcons.Note, null, tint = fg)
+        } else {
+            Text(
+                seed.trim().firstOrNull()?.uppercase() ?: "♪",
+                color = fg,
+                style = MaterialTheme.typography.displayMediumEmphasized,
+            )
+        }
     }
 }
 
@@ -583,13 +854,16 @@ private fun formatTime(ms: Long): String {
     return "%d:%02d".format(total / 60, total % 60)
 }
 
-private fun tracksWord(n: Int): String {
+private fun tracksWord(n: Int) = plural(n, "трек", "трека", "треков")
+private fun playlistsWord(n: Int) = plural(n, "плейлист", "плейлиста", "плейлистов")
+
+private fun plural(n: Int, one: String, few: String, many: String): String {
     val mod100 = n % 100
     val mod10 = n % 10
     return when {
-        mod100 in 11..14 -> "треков"
-        mod10 == 1 -> "трек"
-        mod10 in 2..4 -> "трека"
-        else -> "треков"
+        mod100 in 11..14 -> many
+        mod10 == 1 -> one
+        mod10 in 2..4 -> few
+        else -> many
     }
 }

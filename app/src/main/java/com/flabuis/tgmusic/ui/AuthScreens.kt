@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+
 package com.flabuis.tgmusic.ui
 
 import androidx.compose.foundation.layout.Arrangement
@@ -12,7 +14,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -39,7 +43,7 @@ import org.drinkless.tdlib.TdApi
 fun LoadingScreen(text: String = "Загрузка…") {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator()
+            LoadingIndicator(Modifier.size(64.dp))
             Spacer(Modifier.height(16.dp))
             Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -68,9 +72,9 @@ private fun AuthForm(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(AppIcons.Note, null, tint = Accent, modifier = Modifier.size(56.dp))
+        Icon(AppIcons.Note, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(56.dp))
         Spacer(Modifier.height(16.dp))
-        Text(title, style = MaterialTheme.typography.headlineSmall)
+        Text(title, style = MaterialTheme.typography.headlineMediumEmphasized)
         Spacer(Modifier.height(8.dp))
         Text(
             hint,
@@ -110,10 +114,11 @@ private fun AuthForm(
                 }
             },
             enabled = !busy && value.isNotBlank(),
-            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shapes = ButtonDefaults.shapes(),
+            modifier = Modifier.fillMaxWidth().height(56.dp),
         ) {
-            if (busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-            else Text(button)
+            if (busy) LoadingIndicator(Modifier.size(28.dp), color = MaterialTheme.colorScheme.onPrimary)
+            else Text(button, style = MaterialTheme.typography.titleMediumEmphasized)
         }
     }
 }
