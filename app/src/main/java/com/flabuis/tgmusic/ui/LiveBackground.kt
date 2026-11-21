@@ -43,6 +43,38 @@ fun rememberCoverPalette(fileId: Int?, fallback: List<Color>): List<Color> {
     return colors ?: fallback
 }
 
+/** Shared animation state of the live background. */
+object LiveClock {
+    var time by mutableFloatStateOf(0f)
+    var bass by mutableFloatStateOf(0f)
+    var energy by mutableFloatStateOf(0f)
+    var mood by mutableFloatStateOf(0.4f)
+}
+
+/** Runs the live background clock. Call exactly once, at the app root. */
+@Composable
+fun DriveLiveClock(playing: Boolean) {
+    LaunchedEffect(playing) {
+        var last = 0L
+        while (true) {
+            withFrameNanos { now ->
+                val dt = if (last == 0L) 0f else ((now - last) / 1e9f).coerceAtMost(0.05f)
+                last = now
+                val targetBass = if (playing) BassMeter.bass else 0f
+                val targetEnergy = if (playing) BassMeter.energy else 0f
+                with(LiveClock) {
+                    // fast attack, slower release: looks like it breathes with the kick
+                    bass += (targetBass - bass) * (if (targetBass > bass) 0.45f else 0.08f)
+                    energy += (targetEnergy - energy) * 0.1f
+                    mood += (BassMeter.mood - mood) * 0.02f
+                    // calm songs drift slowly, energetic ones swirl
+                    time += dt * (0.12f + mood * 0.5f + energy * 0.15f)
+                }
+            }
+        }
+    }
+}
+
 /**
  * Living background: soft color blobs drifting around.
  * They swell on bass hits, and move faster and warmer on energetic songs.
@@ -56,28 +88,12 @@ fun LiveBackground(
     intensity: Float = 1f,
     playing: Boolean = true,
 ) {
-    var time by remember { mutableFloatStateOf(0f) }
-    var bass by remember { mutableFloatStateOf(0f) }
-    var energy by remember { mutableFloatStateOf(0f) }
-    var mood by remember { mutableFloatStateOf(0.4f) }
-
-    LaunchedEffect(playing) {
-        var last = 0L
-        while (true) {
-            withFrameNanos { now ->
-                val dt = if (last == 0L) 0f else ((now - last) / 1e9f).coerceAtMost(0.05f)
-                last = now
-                val targetBass = if (playing) BassMeter.bass else 0f
-                val targetEnergy = if (playing) BassMeter.energy else 0f
-                // fast attack, slower release: looks like it breathes with the kick
-                bass += (targetBass - bass) * (if (targetBass > bass) 0.45f else 0.08f)
-                energy += (targetEnergy - energy) * 0.1f
-                mood += (BassMeter.mood - mood) * 0.02f
-                // calm songs drift slowly, energetic ones swirl
-                time += dt * (0.12f + mood * 0.5f + energy * 0.15f)
-            }
-        }
-    }
+    // One shared clock (driven from MainActivity), so every copy of the background
+    // — e.g. the one seen through the glass buttons — shows exactly the same picture.
+    val time = LiveClock.time
+    val bass = LiveClock.bass
+    val energy = LiveClock.energy
+    val mood = LiveClock.mood
 
     val palette = if (colors.isEmpty()) listOf(Color(0xFF4C2C8F), Color(0xFF1E3A8A)) else colors
     Canvas(modifier.fillMaxSize()) {

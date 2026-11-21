@@ -849,21 +849,17 @@ private fun NowPlayingScreen(onClose: () -> Unit, onLyrics: () -> Unit) {
         s.coverLarge ?: s.coverSmall,
         listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary),
     )
-    Box(
-        Modifier.fillMaxSize().background(
-            Brush.verticalGradient(
-                listOf(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f), MaterialTheme.colorScheme.background)
-            )
-        )
-    ) {
-        if (live) {
-            LiveBackground(
-                colors = palette,
-                base = MaterialTheme.colorScheme.background,
-                intensity = 0.85f,
-                playing = s.isPlaying,
-            )
+    val topTint = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+    val baseColor = MaterialTheme.colorScheme.background
+    // The screen's background; drawn once behind everything and again inside the glass buttons.
+    val screenBackground: @Composable () -> Unit = {
+        Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(topTint, baseColor)))) {
+            if (live) LiveBackground(colors = palette, base = baseColor, intensity = 0.85f, playing = s.isPlaying)
         }
+    }
+    val backdrop = remember { Backdrop() }
+    Box(Modifier.fillMaxSize().then(with(backdrop) { Modifier.trackBackdrop() })) {
+        screenBackground()
         Column(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onClose, shapes = IconButtonDefaults.shapes()) { Icon(AppIcons.Down, "Свернуть") }
@@ -946,7 +942,6 @@ private fun NowPlayingScreen(onClose: () -> Unit, onLyrics: () -> Unit) {
             val beat by rememberBeat(s.isPlaying)
             val dark = isAppInDarkTheme()
             val ink = if (dark) Color.White else Color.Black
-            val glow = palette.firstOrNull() ?: MaterialTheme.colorScheme.primary
             val playCorner by animateDpAsState(if (s.isPlaying) 24.dp else 40.dp, spring(dampingRatio = 0.45f, stiffness = 500f), label = "glassPlay")
             Row(
                 Modifier.fillMaxWidth(),
@@ -955,13 +950,13 @@ private fun NowPlayingScreen(onClose: () -> Unit, onLyrics: () -> Unit) {
             ) {
                 GlassButton(
                     onClick = PlayerConnection::previous,
-                    beat = beat, glow = glow, dark = dark,
+                    beat = beat, backdrop = backdrop, background = screenBackground, dark = dark,
                     start = 36.dp, end = 16.dp,
                     modifier = Modifier.weight(1f).height(80.dp),
                 ) { Icon(AppIcons.Previous, "Назад", Modifier.size(32.dp), tint = ink) }
                 GlassButton(
                     onClick = { PlayerConnection.togglePlay() },
-                    beat = beat, glow = glow, dark = dark, strong = true,
+                    beat = beat, backdrop = backdrop, background = screenBackground, dark = dark, strong = true,
                     start = playCorner, end = playCorner,
                     modifier = Modifier.weight(1.5f).height(80.dp),
                 ) {
@@ -978,7 +973,7 @@ private fun NowPlayingScreen(onClose: () -> Unit, onLyrics: () -> Unit) {
                 }
                 GlassButton(
                     onClick = PlayerConnection::next,
-                    beat = beat, glow = glow, dark = dark,
+                    beat = beat, backdrop = backdrop, background = screenBackground, dark = dark,
                     start = 16.dp, end = 36.dp,
                     modifier = Modifier.weight(1f).height(80.dp),
                 ) { Icon(AppIcons.Next, "Дальше", Modifier.size(32.dp), tint = ink) }

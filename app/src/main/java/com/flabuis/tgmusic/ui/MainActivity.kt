@@ -52,6 +52,8 @@ class MainActivity : ComponentActivity() {
             }
             TgMusicTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    val playing by PlayerConnection.state.collectAsState()
+                    DriveLiveClock(playing.isPlaying)
                     AppLiveBackground()
                     Box(Modifier.fillMaxSize().systemBarsPadding()) {
                         Root()
