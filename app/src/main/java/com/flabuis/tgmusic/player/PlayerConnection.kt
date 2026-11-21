@@ -128,6 +128,11 @@ object PlayerConnection {
 
     private var repeatOnceRestore: Int? = null
 
+    /** Next track started by itself (crossfade): animate as "forward". */
+    fun markForward() {
+        direction = 1
+    }
+
     fun next() = withController { direction = 1; it.seekToNextMediaItem() }
     fun previous() = withController { direction = -1; it.seekToPrevious() }
 

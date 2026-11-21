@@ -27,6 +27,7 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,6 +48,7 @@ import com.flabuis.tgmusic.data.UpdateState
 import com.flabuis.tgmusic.data.Updater
 import com.flabuis.tgmusic.BuildConfig
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
@@ -84,6 +86,25 @@ fun SettingsScreen(onBack: () -> Unit) {
                         Text(t.title, style = MaterialTheme.typography.bodyLarge)
                     }
                 }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            val crossfade by Settings.crossfadeSec.collectAsState()
+            Section("Кроссфейд") {
+                Text(
+                    if (crossfade == 0) "Выключен: треки идут друг за другом"
+                    else "Конец трека плавно перетекает в следующий за $crossfade сек",
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                Slider(
+                    value = crossfade.toFloat(),
+                    onValueChange = { Settings.setCrossfade(it.roundToInt()) },
+                    valueRange = 0f..12f,
+                    steps = 11,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
             }
 
             Spacer(Modifier.height(16.dp))

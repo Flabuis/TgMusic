@@ -14,17 +14,25 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.source.ShuffleOrder
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.flabuis.tgmusic.data.Settings
 import com.flabuis.tgmusic.td.TgDataSource
 import com.flabuis.tgmusic.ui.ImageCache
 import com.flabuis.tgmusic.ui.MainActivity
-import kotlinx.coroutines.MainScope
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
-import java.io.File
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import java.io.File
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 /** Background playback: notification, lock screen and headphone buttons come from MediaSession. */
 @UnstableApi
@@ -32,9 +40,27 @@ class PlaybackService : MediaSessionService() {
 
     private var session: MediaSession? = null
     private val scope = MainScope()
+    private var fadeJob: Job? = null
+    private var fadingOut: ExoPlayer? = null
 
-    override fun onCreate() {
-        super.onCreate()
+    private val musicAttributes = AudioAttributes.Builder()
+        .setUsage(C.USAGE_MEDIA)
+        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+        .build()
+
+    private val listener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (!isPlaying) BassMeter.reset()
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            val p = session?.player as? ExoPlayer ?: return
+            mediaItem?.let { loadArtwork(p, it) }
+        }
+    }
+
+    /** A player that measures the bass and streams from Telegram. */
+    private fun newPlayer(): ExoPlayer {
         // Audio is measured on its way to the speaker and shown in sync with what you hear.
         val renderers = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
@@ -48,26 +74,24 @@ class PlaybackService : MediaSessionService() {
                     .build()
             )
         }
-        val player = ExoPlayer.Builder(this, renderers)
+        return ExoPlayer.Builder(this, renderers)
             .setMediaSourceFactory(ProgressiveMediaSource.Factory(TgDataSource.Factory()))
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                /* handleAudioFocus = */ true
-            )
+            .setAudioAttributes(musicAttributes, /* handleAudioFocus = */ true)
             .setHandleAudioBecomingNoisy(true) // pause when headphones are unplugged
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
+            .also { it.addListener(listener) }
+    }
 
+    override fun onCreate() {
+        super.onCreate()
         val openApp = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        session = MediaSession.Builder(this, player)
+        session = MediaSession.Builder(this, newPlayer())
             .setSessionActivity(openApp)
             .setCallback(object : MediaSession.Callback {
                 // Items coming from a controller lose their URI, so rebuild it from mediaId.
@@ -86,16 +110,81 @@ class PlaybackService : MediaSessionService() {
             })
             .build()
 
-        player.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (!isPlaying) BassMeter.reset()
-            }
-
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                mediaItem?.let { loadArtwork(player, it) }
-            }
-        })
+        watchForCrossfade()
     }
+
+    // ---------- Crossfade ----------
+
+    /** Watches the end of each track and starts the next one early, overlapping. */
+    private fun watchForCrossfade() {
+        scope.launch {
+            while (isActive) {
+                delay(100)
+                val fadeMs = Settings.crossfadeSec.value * 1000L
+                val p = session?.player as? ExoPlayer ?: continue
+                if (fadeMs <= 0 || fadeJob?.isActive == true) continue
+                if (!p.isPlaying || p.repeatMode == Player.REPEAT_MODE_ONE || !p.hasNextMediaItem()) continue
+                val duration = p.duration
+                if (duration == C.TIME_UNSET || duration < fadeMs * 3) continue
+                if (duration - p.currentPosition <= fadeMs) startCrossfade(p, fadeMs)
+            }
+        }
+    }
+
+    /**
+     * Two players at once: the new one starts the next track silently and becomes the
+     * session player (notification, app UI follow it), the old one fades out underneath.
+     */
+    private fun startCrossfade(old: ExoPlayer, fadeMs: Long) {
+        val next = newPlayer()
+        val items = (0 until old.mediaItemCount).map { old.getMediaItemAt(it) }
+        next.setMediaItems(items, old.nextMediaItemIndex, 0L)
+        next.repeatMode = old.repeatMode
+        if (old.shuffleModeEnabled) {
+            next.setShuffleOrder(ShuffleOrder.DefaultShuffleOrder(shuffleOrderOf(old), System.nanoTime()))
+            next.shuffleModeEnabled = true
+        }
+        next.volume = 0f
+        next.prepare()
+
+        // Only the new player keeps audio focus; the old one just finishes quietly.
+        old.setAudioAttributes(musicAttributes, false)
+        old.setHandleAudioBecomingNoisy(false)
+        next.play()
+        PlayerConnection.markForward()
+        session?.player = next
+
+        fadingOut = old
+        fadeJob = scope.launch {
+            val steps = (fadeMs / 40).toInt().coerceAtLeast(1)
+            for (i in 1..steps) {
+                if (!next.playWhenReady) old.pause() // paused during the fade: stop both
+                val t = i.toFloat() / steps
+                // equal-power curve: loudness stays even in the middle
+                next.volume = sin(t * PI / 2).toFloat()
+                old.volume = cos(t * PI / 2).toFloat()
+                delay(40)
+            }
+            next.volume = 1f
+            old.removeListener(listener)
+            old.release()
+            fadingOut = null
+        }
+    }
+
+    /** Current shuffled play order of [p], so the new player continues the same shuffle. */
+    private fun shuffleOrderOf(p: ExoPlayer): IntArray {
+        val timeline = p.currentTimeline
+        val order = ArrayList<Int>(timeline.windowCount)
+        var i = timeline.getFirstWindowIndex(true)
+        while (i != C.INDEX_UNSET && order.size < timeline.windowCount) {
+            order += i
+            i = timeline.getNextWindowIndex(i, Player.REPEAT_MODE_OFF, true)
+        }
+        return if (order.size == timeline.windowCount) order.toIntArray() else IntArray(timeline.windowCount) { it }
+    }
+
+    // ---------- Artwork ----------
 
     /** Puts the album cover into the notification / lock screen once it's downloaded. */
     private fun loadArtwork(player: ExoPlayer, item: MediaItem) {
@@ -132,12 +221,14 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        scope.cancel()
+        fadingOut?.release()
+        fadingOut = null
         session?.run {
             player.release()
             release()
         }
         session = null
-        scope.cancel()
         super.onDestroy()
     }
 }

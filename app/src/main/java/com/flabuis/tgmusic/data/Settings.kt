@@ -29,8 +29,18 @@ object Settings {
         prefs().edit().putBoolean("live_bg", on).apply()
     }
 
+    private val _crossfadeSec = MutableStateFlow(6)
+    /** Seconds the end of one track overlaps the start of the next; 0 = off. */
+    val crossfadeSec: StateFlow<Int> = _crossfadeSec
+
+    fun setCrossfade(sec: Int) {
+        _crossfadeSec.value = sec
+        prefs().edit().putInt("crossfade", sec).apply()
+    }
+
     fun init(context: Context) {
         ctx = context.applicationContext
+        _crossfadeSec.value = prefs().getInt("crossfade", 6)
         _liveBackground.value = prefs().getBoolean("live_bg", true)
         val saved = prefs().getString("theme", null)
         _theme.value = AppTheme.entries.firstOrNull { it.name == saved } ?: AppTheme.SYSTEM
