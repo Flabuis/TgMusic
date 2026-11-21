@@ -69,6 +69,10 @@ object Td {
     private val _fileUpdates = MutableSharedFlow<TdApi.File>(extraBufferCapacity = 512)
     val fileUpdates: SharedFlow<TdApi.File> = _fileUpdates
 
+    private val _sendResults = MutableSharedFlow<Pair<Long, String?>>(extraBufferCapacity = 256)
+    /** (temporary message id, error or null) when an outgoing message finished sending. */
+    val sendResults: SharedFlow<Pair<Long, String?>> = _sendResults
+
     fun init(context: Context) {
         appContext = context.applicationContext
         try {
@@ -95,6 +99,8 @@ object Td {
                 }
             }
             is TdApi.UpdateFile -> _fileUpdates.tryEmit(obj.file)
+            is TdApi.UpdateMessageSendSucceeded -> _sendResults.tryEmit(obj.oldMessageId to null)
+            is TdApi.UpdateMessageSendFailed -> _sendResults.tryEmit(obj.oldMessageId to obj.error.message)
         }
     }
 

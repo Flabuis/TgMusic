@@ -30,6 +30,26 @@
             </intent-filter>
         </activity>
 
+        <!-- "Share" a music file from any app straight into a playlist chat -->
+        <activity
+            android:name=".ui.ShareActivity"
+            android:exported="true"
+            android:label="В плейлист TgMusic"
+            android:theme="@style/Theme.TgMusic.Translucent"
+            android:excludeFromRecents="true"
+            android:taskAffinity="">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+        </activity>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"

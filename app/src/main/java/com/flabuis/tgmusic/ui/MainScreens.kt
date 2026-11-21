@@ -336,7 +336,7 @@ private fun PlaylistCard(ch: Channel, shape: Shape, onClick: () -> Unit) {
 
 /** Telegram avatar of a chat, or a colored letter if it has none. */
 @Composable
-private fun ChatAvatar(ch: Channel, modifier: Modifier, shape: Shape) {
+internal fun ChatAvatar(ch: Channel, modifier: Modifier, shape: Shape) {
     var photo by remember(ch.id) { mutableStateOf(Library.cachedPhoto(ch.id)) }
     LaunchedEffect(ch.id) { if (photo == null) photo = Library.chatPhoto(ch.id) }
     val p = photo
