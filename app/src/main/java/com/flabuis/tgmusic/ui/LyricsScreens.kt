@@ -112,10 +112,19 @@ fun rememberCoverColor(fileId: Int?, fallback: Color): Color {
     return animateColorAsState(picked ?: fallback, tween(600), label = "coverColor").value
 }
 
+/** The lyrics screen already shows the text, so the idle screen stays off while it's open. */
+object IdleGuard {
+    var lyricsOpen by mutableStateOf(false)
+}
+
 // ---------- Full-screen lyrics ----------
 
 @Composable
 fun LyricsScreen(onClose: () -> Unit) {
+    DisposableEffect(Unit) {
+        IdleGuard.lyricsOpen = true
+        onDispose { IdleGuard.lyricsOpen = false }
+    }
     val s by PlayerConnection.state.collectAsState()
     val allLyrics by Lyrics.state.collectAsState()
     val lyrics = Lyrics.stateFor(allLyrics, s.mediaId)
@@ -300,8 +309,9 @@ fun IdleOverlay(content: @Composable () -> Unit) {
     val lifecycleState by lifecycle.currentStateFlow.collectAsState()
     val resumed = lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
 
-    LaunchedEffect(lastTouch, s.hasMedia, resumed) {
-        if (!resumed) {
+    val lyricsOpen = IdleGuard.lyricsOpen
+    LaunchedEffect(lastTouch, s.hasMedia, resumed, lyricsOpen) {
+        if (!resumed || lyricsOpen) {
             idle = false
             return@LaunchedEffect
         }
