@@ -66,7 +66,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit, onOpenAnime: () -> Unit) {
     val theme by Settings.theme.collectAsState()
     var tab by remember { mutableStateOf(0) }
     var cacheSize by remember { mutableStateOf<Long?>(null) }
@@ -215,6 +215,34 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
 
             } else {
+            Section("Аниме") {
+                Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Каталог и плеер аниме через бота @AniMetkai",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.tertiary) {
+                        Text(
+                            "BETA",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onTertiary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = onOpenAnime,
+                    shapes = ButtonDefaults.shapes(),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(52.dp),
+                ) { Text("Открыть аниме") }
+                Spacer(Modifier.height(8.dp))
+            }
+
+            Spacer(Modifier.height(16.dp))
+
             val crossfade by Settings.crossfadeSec.collectAsState()
             Section("Кроссфейд") {
                 Text(

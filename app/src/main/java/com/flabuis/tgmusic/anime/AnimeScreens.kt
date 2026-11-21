@@ -94,7 +94,7 @@ import kotlinx.coroutines.launch
 // ---------- Catalog / search ----------
 
 @Composable
-fun AnimeHomeScreen(onOpen: (AnimeResult, WatchEntry?) -> Unit) {
+fun AnimeHomeScreen(onBack: () -> Unit, onOpen: (AnimeResult, WatchEntry?) -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var results by remember { mutableStateOf<List<AnimeResult>?>(null) }
     var loading by remember { mutableStateOf(false) }
@@ -114,11 +114,21 @@ fun AnimeHomeScreen(onOpen: (AnimeResult, WatchEntry?) -> Unit) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        Text(
-            "Аниме",
-            style = MaterialTheme.typography.displaySmallEmphasized,
-            modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 8.dp),
-        )
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 8.dp)) {
+            IconButton(onClick = onBack, shapes = IconButtonDefaults.shapes()) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад")
+            }
+            Text("Аниме", style = MaterialTheme.typography.headlineMediumEmphasized)
+            Spacer(Modifier.width(8.dp))
+            Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.tertiary) {
+                Text(
+                    "BETA",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onTertiary,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                )
+            }
+        }
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },

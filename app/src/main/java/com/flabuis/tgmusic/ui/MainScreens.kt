@@ -89,8 +89,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import com.flabuis.tgmusic.anime.AnimeHomeScreen
 import com.flabuis.tgmusic.anime.AnimePageScreen
 import com.flabuis.tgmusic.anime.AnimeResult
@@ -186,9 +184,12 @@ fun MainApp() {
                 Screen.Picker -> PickerScreen(onDone = pop)
                 is Screen.Playlist -> PlaylistScreen(screen.channel, onBack = pop)
                 Screen.NowPlaying -> NowPlayingScreen(onClose = pop, onLyrics = { push(Screen.Lyrics) })
-                Screen.Settings -> SettingsScreen(onBack = pop)
+                Screen.Settings -> SettingsScreen(onBack = pop, onOpenAnime = { push(Screen.AnimeHome) })
                 Screen.Lyrics -> LyricsScreen(onClose = pop)
-                Screen.AnimeHome -> AnimeHomeScreen(onOpen = { r, resume -> push(Screen.AnimePage(r, resume)) })
+                Screen.AnimeHome -> AnimeHomeScreen(
+                    onBack = pop,
+                    onOpen = { r, resume -> push(Screen.AnimePage(r, resume)) },
+                )
                 is Screen.AnimePage -> AnimePageScreen(
                     result = screen.result,
                     resume = screen.resume,
@@ -201,23 +202,7 @@ fun MainApp() {
         if (current != Screen.NowPlaying && current != Screen.Lyrics && current !is Screen.AnimeVideo) {
             MiniPlayer(onOpen = { push(Screen.NowPlaying) })
         }
-        // Two sections: music and anime. The bar shows only on their main screens.
-        if (current == Screen.Home || current == Screen.AnimeHome) {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.9f)) {
-                NavigationBarItem(
-                    selected = current == Screen.Home,
-                    onClick = { stack = listOf(Screen.Home) },
-                    icon = { Icon(AppIcons.Note, null) },
-                    label = { Text("Музыка") },
-                )
-                NavigationBarItem(
-                    selected = current == Screen.AnimeHome,
-                    onClick = { stack = listOf(Screen.AnimeHome) },
-                    icon = { Icon(AppIcons.PlayCircle, null) },
-                    label = { Text("Аниме") },
-                )
-            }
-        }
+
     }
 }
 
