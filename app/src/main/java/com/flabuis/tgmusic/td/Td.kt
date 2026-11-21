@@ -69,6 +69,10 @@ object Td {
     private val _fileUpdates = MutableSharedFlow<TdApi.File>(extraBufferCapacity = 512)
     val fileUpdates: SharedFlow<TdApi.File> = _fileUpdates
 
+    private val _messageEvents = MutableSharedFlow<TdApi.Object>(extraBufferCapacity = 512)
+    /** New / edited messages in any chat (used to talk to bots). */
+    val messageEvents: SharedFlow<TdApi.Object> = _messageEvents
+
     private val _sendResults = MutableSharedFlow<Pair<Long, String?>>(extraBufferCapacity = 256)
     /** (temporary message id, error or null) when an outgoing message finished sending. */
     val sendResults: SharedFlow<Pair<Long, String?>> = _sendResults
@@ -99,6 +103,8 @@ object Td {
                 }
             }
             is TdApi.UpdateFile -> _fileUpdates.tryEmit(obj.file)
+            is TdApi.UpdateNewMessage, is TdApi.UpdateMessageContent, is TdApi.UpdateMessageEdited ->
+                _messageEvents.tryEmit(obj)
             is TdApi.UpdateMessageSendSucceeded -> _sendResults.tryEmit(obj.oldMessageId to null)
             is TdApi.UpdateMessageSendFailed -> _sendResults.tryEmit(obj.oldMessageId to obj.error.message)
         }

@@ -89,6 +89,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import com.flabuis.tgmusic.anime.AnimeHomeScreen
+import com.flabuis.tgmusic.anime.AnimePageScreen
+import com.flabuis.tgmusic.anime.AnimeResult
+import com.flabuis.tgmusic.anime.AnimeVideoScreen
+import com.flabuis.tgmusic.anime.BotMessage
+import com.flabuis.tgmusic.anime.WatchEntry
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
@@ -133,6 +141,9 @@ private sealed interface Screen {
     data object NowPlaying : Screen
     data object Settings : Screen
     data object Lyrics : Screen
+    data object AnimeHome : Screen
+    data class AnimePage(val result: AnimeResult, val resume: WatchEntry?) : Screen
+    data class AnimeVideo(val title: String, val thumb: Int?, val card: BotMessage, val resume: WatchEntry?) : Screen
 }
 
 @Composable
@@ -177,9 +188,36 @@ fun MainApp() {
                 Screen.NowPlaying -> NowPlayingScreen(onClose = pop, onLyrics = { push(Screen.Lyrics) })
                 Screen.Settings -> SettingsScreen(onBack = pop)
                 Screen.Lyrics -> LyricsScreen(onClose = pop)
+                Screen.AnimeHome -> AnimeHomeScreen(onOpen = { r, resume -> push(Screen.AnimePage(r, resume)) })
+                is Screen.AnimePage -> AnimePageScreen(
+                    result = screen.result,
+                    resume = screen.resume,
+                    onBack = pop,
+                    onWatch = { card, resume -> push(Screen.AnimeVideo(screen.result.title, screen.result.thumbFileId, card, resume)) },
+                )
+                is Screen.AnimeVideo -> AnimeVideoScreen(screen.title, screen.thumb, screen.card, screen.resume, onBack = pop)
             }
         }
-        if (current != Screen.NowPlaying && current != Screen.Lyrics) MiniPlayer(onOpen = { push(Screen.NowPlaying) })
+        if (current != Screen.NowPlaying && current != Screen.Lyrics && current !is Screen.AnimeVideo) {
+            MiniPlayer(onOpen = { push(Screen.NowPlaying) })
+        }
+        // Two sections: music and anime. The bar shows only on their main screens.
+        if (current == Screen.Home || current == Screen.AnimeHome) {
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.9f)) {
+                NavigationBarItem(
+                    selected = current == Screen.Home,
+                    onClick = { stack = listOf(Screen.Home) },
+                    icon = { Icon(AppIcons.Note, null) },
+                    label = { Text("Музыка") },
+                )
+                NavigationBarItem(
+                    selected = current == Screen.AnimeHome,
+                    onClick = { stack = listOf(Screen.AnimeHome) },
+                    icon = { Icon(AppIcons.PlayCircle, null) },
+                    label = { Text("Аниме") },
+                )
+            }
+        }
     }
 }
 
