@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.lerp
 import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
 import com.flabuis.tgmusic.player.BassMeter
+import com.flabuis.tgmusic.data.Settings
+import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.cos
@@ -87,7 +89,9 @@ fun LiveBackground(
     base: Color = Color.Black,
     intensity: Float = 1f,
     playing: Boolean = true,
+    idle: Boolean = false,
 ) {
+    val userBrightness by (if (idle) Settings.idleBrightness else Settings.liveBrightness).collectAsState()
     // One shared clock (driven from MainActivity), so every copy of the background
     // — e.g. the one seen through the glass buttons — shows exactly the same picture.
     val time = LiveClock.time
@@ -101,7 +105,7 @@ fun LiveBackground(
         val w = size.width
         val h = size.height
         val minSide = minOf(w, h)
-        val glow = (0.35f + bass * 0.45f + energy * 0.2f) * intensity
+        val glow = (0.35f + bass * 0.45f + energy * 0.2f) * intensity * userBrightness
         palette.forEachIndexed { i, c ->
             val phase = i * 1.9f
             val center = Offset(

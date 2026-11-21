@@ -174,9 +174,21 @@ fun LyricsScreen(onClose: () -> Unit) {
     }
 }
 
+/** Text color picked in Customization (or a bright color from the cover). */
+@Composable
+fun rememberLyricsColor(): Color {
+    val chosen by Settings.lyricsColor.collectAsState()
+    val s by PlayerConnection.state.collectAsState()
+    if (chosen != 0) return Color(chosen)
+    val palette = rememberCoverPalette(s.coverLarge ?: s.coverSmall, listOf(Color.White))
+    // brighten the cover color so it reads well on the dark background
+    return lerp(palette.first(), Color.White, 0.35f)
+}
+
 @Composable
 private fun SyncedLyrics(lines: List<LyricLine>, pos: Long) {
     val active = activeLine(lines, pos)
+    val textColor = rememberLyricsColor()
     val listState = rememberLazyListState()
     val dragged by listState.interactionSource.collectIsDraggedAsState()
     var lastUserScroll by remember { mutableLongStateOf(0L) }
@@ -206,8 +218,8 @@ private fun SyncedLyrics(lines: List<LyricLine>, pos: Long) {
                 // Spotify look: sung line white, already sung dimmed, upcoming dark.
                 val color by animateColorAsState(
                     when {
-                        isActive -> Color.White
-                        index < active -> Color.White.copy(alpha = 0.5f)
+                        isActive -> textColor
+                        index < active -> textColor.copy(alpha = 0.5f)
                         else -> Color.Black.copy(alpha = 0.55f)
                     },
                     tween(450),
@@ -265,7 +277,7 @@ private fun PlainLyrics(text: String) {
         Spacer(Modifier.height(12.dp))
         Text(
             text,
-            color = Color.White,
+            color = rememberLyricsColor(),
             style = MaterialTheme.typography.titleLargeEmphasized,
             fontWeight = FontWeight.Bold,
         )
@@ -361,7 +373,7 @@ private fun IdleScreen(onWake: () -> Unit, enterModifier: Modifier) {
         val live by Settings.liveBackground.collectAsState()
         if (live) {
             val palette = rememberCoverPalette(s.coverLarge ?: s.coverSmall, listOf(Color(0xFF4C2C8F), Color(0xFF0E4A7A)))
-            LiveBackground(colors = palette, base = Color.Black, intensity = 0.45f, playing = s.isPlaying)
+            LiveBackground(colors = palette, base = Color.Black, intensity = 0.45f, playing = s.isPlaying, idle = true)
         }
         // Text slowly wanders a few dp so no pixel stays lit in one place (OLED burn-in).
         val drift = rememberInfiniteTransition(label = "drift")
@@ -372,6 +384,7 @@ private fun IdleScreen(onWake: () -> Unit, enterModifier: Modifier) {
             verticalArrangement = Arrangement.Center,
         ) {
             Spacer(Modifier.weight(1f))
+            val idleText = rememberLyricsColor()
             val synced = (lyrics as? LyricsState.Ready)?.synced
             if (synced != null) {
                 val active = activeLine(synced, pos)
@@ -386,7 +399,7 @@ private fun IdleScreen(onWake: () -> Unit, enterModifier: Modifier) {
                     Column {
                         Text(
                             synced.getOrNull(i)?.text?.ifBlank { "♪" } ?: "♪",
-                            color = Color.White,
+                            color = idleText,
                             style = MaterialTheme.typography.displaySmallEmphasized,
                             fontWeight = FontWeight.Bold,
                         )
@@ -394,7 +407,7 @@ private fun IdleScreen(onWake: () -> Unit, enterModifier: Modifier) {
                             Spacer(Modifier.height(16.dp))
                             Text(
                                 it.text.ifBlank { "♪" },
-                                color = Color.White.copy(alpha = 0.3f),
+                                color = idleText.copy(alpha = 0.3f),
                                 style = MaterialTheme.typography.headlineSmallEmphasized,
                                 fontWeight = FontWeight.Bold,
                             )
@@ -402,7 +415,7 @@ private fun IdleScreen(onWake: () -> Unit, enterModifier: Modifier) {
                     }
                 }
             } else {
-                Text(s.title, color = Color.White, style = MaterialTheme.typography.displaySmallEmphasized, fontWeight = FontWeight.Bold)
+                Text(s.title, color = idleText, style = MaterialTheme.typography.displaySmallEmphasized, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 Text(s.artist, color = Color.White.copy(alpha = 0.5f), style = MaterialTheme.typography.headlineSmall)
             }
