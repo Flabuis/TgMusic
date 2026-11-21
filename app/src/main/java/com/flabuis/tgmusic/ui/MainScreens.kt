@@ -482,6 +482,7 @@ private fun PlaylistScreen(channel: Channel, onBack: () -> Unit) {
         if (fromIndex >= 0 && toIndex >= 0) {
             tracks = list.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
             movedDuringDrag = true
+            menuFor = null
             haptic.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
         }
     }
@@ -547,22 +548,17 @@ private fun PlaylistScreen(channel: Channel, onBack: () -> Unit) {
                                     track = t,
                                     isCurrent = t.mediaId == player.mediaId,
                                     isPlaying = player.isPlaying,
-                                    // Long press: drag to move. Long press and let go without moving: menu.
+                                    // Hold: menu pops up right away. Hold and move: drag (menu closes).
+                                    // Only a short tap switches the track.
                                     modifier = if (canReorder) Modifier.longPressDraggableHandle(
-                                        onDragStarted = {
-                                            movedDuringDrag = false
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        },
+                                        onDragStarted = { movedDuringDrag = false },
                                         onDragStopped = {
                                             if (movedDuringDrag) tracks?.let { Library.saveOrder(channel.id, it) }
-                                            else menuFor = t.mediaId
                                         },
                                     ) else Modifier,
-                                    onLongClick = if (canReorder) null else {
-                                        {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            menuFor = t.mediaId
-                                        }
+                                    onLongClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        menuFor = t.mediaId
                                     },
                                 ) {
                                     val index = shown.indexOf(t)
