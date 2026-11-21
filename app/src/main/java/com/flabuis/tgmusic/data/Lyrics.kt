@@ -22,6 +22,9 @@ import kotlin.math.abs
 
 data class LyricLine(val timeMs: Long, val text: String)
 
+/** Lyrics state together with the track it belongs to. */
+data class TrackLyrics(val mediaId: String?, val state: LyricsState)
+
 sealed interface LyricsState {
     data object None : LyricsState
     data object Loading : LyricsState
@@ -36,8 +39,8 @@ sealed interface LyricsState {
  */
 object Lyrics {
     private lateinit var cacheDir: File
-    private val _state = MutableStateFlow<LyricsState>(LyricsState.None)
-    val state: StateFlow<LyricsState> = _state
+    private val _state = MutableStateFlow(TrackLyrics(null, LyricsState.None))
+    val state: StateFlow<TrackLyrics> = _state
 
     private const val NOT_FOUND_RETRY_MS = 3L * 24 * 3600 * 1000
 
@@ -46,21 +49,26 @@ object Lyrics {
         scope.launch {
             PlayerConnection.state
                 .map { Triple(it.mediaId, it.title, it.artist) }
-                .distinctUntilChanged { a, b -> a.first == b.first }
+                .distinctUntilChanged()
                 .collectLatest { (id, title, artist) ->
                     if (id == null || title.isBlank()) {
-                        _state.value = LyricsState.None
+                        _state.value = TrackLyrics(id, LyricsState.None)
                         return@collectLatest
                     }
-                    _state.value = LyricsState.Loading
-                    _state.value = try {
+                    _state.value = TrackLyrics(id, LyricsState.Loading)
+                    val result = try {
                         withContext(Dispatchers.IO) { load(title, artist, PlayerConnection.state.value.durationMs) }
                     } catch (e: Exception) {
                         LyricsState.NotFound
                     }
+                    _state.value = TrackLyrics(id, result)
                 }
         }
     }
+
+    /** Lyrics for [mediaId] only; anything older counts as still loading. */
+    fun stateFor(all: TrackLyrics, mediaId: String?): LyricsState =
+        if (mediaId != null && all.mediaId == mediaId) all.state else LyricsState.Loading
 
     private fun load(rawTitle: String, rawArtist: String, durationMs: Long): LyricsState {
         val title = clean(rawTitle)

@@ -105,7 +105,8 @@ fun rememberCoverColor(fileId: Int?, fallback: Color): Color {
 @Composable
 fun LyricsScreen(onClose: () -> Unit) {
     val s by PlayerConnection.state.collectAsState()
-    val lyrics by Lyrics.state.collectAsState()
+    val allLyrics by Lyrics.state.collectAsState()
+    val lyrics = Lyrics.stateFor(allLyrics, s.mediaId)
     val pos by rememberPosition()
     val bg = rememberCoverColor(s.coverLarge ?: s.coverSmall, MaterialTheme.colorScheme.primaryContainer)
 
@@ -123,10 +124,10 @@ fun LyricsScreen(onClose: () -> Unit) {
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (val l = lyrics) {
-                LyricsState.Loading, LyricsState.None -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                LyricsState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     LoadingIndicator(Modifier.size(64.dp), color = Color.White)
                 }
-                LyricsState.NotFound -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                LyricsState.NotFound, LyricsState.None -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                     Text(
                         "Текст для этого трека не нашёлся",
                         color = Color.White.copy(alpha = 0.8f),
@@ -136,7 +137,11 @@ fun LyricsScreen(onClose: () -> Unit) {
                 }
                 is LyricsState.Ready -> {
                     val synced = l.synced
-                    if (synced != null) SyncedLyrics(synced, pos) else PlainLyrics(l.plain.orEmpty())
+                    if (synced != null) {
+                        androidx.compose.runtime.key(s.mediaId) { SyncedLyrics(synced, pos) }
+                    } else {
+                        PlainLyrics(l.plain.orEmpty())
+                    }
                 }
             }
         }
@@ -285,7 +290,8 @@ fun IdleOverlay(content: @Composable () -> Unit) {
 @Composable
 private fun IdleScreen(onWake: () -> Unit, enterModifier: Modifier) {
     val s by PlayerConnection.state.collectAsState()
-    val lyrics by Lyrics.state.collectAsState()
+    val allLyrics by Lyrics.state.collectAsState()
+    val lyrics = Lyrics.stateFor(allLyrics, s.mediaId)
     val pos by rememberPosition()
     val context = LocalContext.current
 

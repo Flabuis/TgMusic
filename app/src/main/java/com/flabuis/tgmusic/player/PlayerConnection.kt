@@ -85,7 +85,9 @@ object PlayerConnection {
 
     private fun update() {
         val c = controller ?: return
-        val meta = c.mediaMetadata
+        // Metadata of the queue item itself (what we set from Telegram), so the title always
+        // belongs to the same track as mediaId. c.mediaMetadata can lag behind on track change.
+        val meta = c.currentMediaItem?.mediaMetadata ?: c.mediaMetadata
         _state.value = PlayerUi(
             hasMedia = c.mediaItemCount > 0,
             isPlaying = c.isPlaying,
