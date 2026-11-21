@@ -110,6 +110,11 @@ object Library {
 
     fun cachedTracks(chatId: Long): List<Track>? = trackCache[chatId]
 
+    /** Forget loaded tracks of a chat, so the playlist reloads with new ones. */
+    fun invalidate(chatId: Long) {
+        trackCache.remove(chatId)
+    }
+
     /** All audio in a channel, newest first. Includes mp3/flac etc. sent as files. */
     suspend fun loadTracks(chatId: Long, force: Boolean = false): List<Track> {
         if (!force) trackCache[chatId]?.let { return it }
