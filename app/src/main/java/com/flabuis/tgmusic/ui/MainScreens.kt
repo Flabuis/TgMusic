@@ -144,6 +144,22 @@ fun MainApp() {
         if (selected.isEmpty()) stack = listOf(Screen.Home, Screen.Picker)
     }
 
+    // Live background behind the whole app (home, playlists, settings), in the playing track's colors.
+    val player by PlayerConnection.state.collectAsState()
+    val live by Settings.liveBackground.collectAsState()
+    if (live && player.hasMedia) {
+        val palette = rememberCoverPalette(
+            player.coverLarge ?: player.coverSmall,
+            listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary),
+        )
+        LiveBackground(
+            colors = palette,
+            base = MaterialTheme.colorScheme.background,
+            intensity = 0.5f,
+            playing = player.isPlaying,
+        )
+    }
+
     Column(Modifier.fillMaxSize()) {
         AnimatedContent(
             targetState = current,
