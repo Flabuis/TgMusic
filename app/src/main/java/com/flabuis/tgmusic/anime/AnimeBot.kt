@@ -58,7 +58,7 @@ class EpisodeState(val msg: BotMessage) {
 
     /** Episode buttons on the current page: number -> button (current one has 🔵). */
     val episodes: List<Pair<Int, BotButton>> = msg.allButtons.mapNotNull { b ->
-        if (b.has("/", "➡", "⬅", "⏩", "⏪", "✅", "🔄")) return@mapNotNull null
+        if (b.has("/", "➡", "⬅", "⏩", "⏪", "✅", "🔄", "💬", "📸", "🎥")) return@mapNotNull null
         if (b.text.any { it.isLetter() }) return@mapNotNull null
         val n = b.clean.toIntOrNull() ?: return@mapNotNull null
         n to b
