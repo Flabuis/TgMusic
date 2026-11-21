@@ -61,6 +61,7 @@ import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.toShape
@@ -737,22 +738,30 @@ private fun NowPlayingScreen(onClose: () -> Unit) {
 
             val duration = s.durationMs.coerceAtLeast(1)
             val value = dragging ?: (pos.toFloat() / duration).coerceIn(0f, 1f)
-            Slider(
-                value = value,
-                onValueChange = { dragging = it },
-                onValueChangeFinished = {
-                    dragging?.let { PlayerConnection.seekTo((it * duration).toLong()) }
-                    dragging = null
-                },
-                enabled = s.durationMs > 0,
-                track = {
-                    LinearWavyProgressIndicator(
-                        progress = { value },
-                        amplitude = { if (s.isPlaying && dragging == null) 1f else 0f },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                },
-            )
+            // Wavy line under an invisible-track slider: looks like Android 16's media seekbar.
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                LinearWavyProgressIndicator(
+                    progress = { value },
+                    amplitude = { if (s.isPlaying && dragging == null) 1f else 0f },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                )
+                Slider(
+                    value = value,
+                    onValueChange = { dragging = it },
+                    onValueChangeFinished = {
+                        dragging?.let { PlayerConnection.seekTo((it * duration).toLong()) }
+                        dragging = null
+                    },
+                    enabled = s.durationMs > 0,
+                    colors = SliderDefaults.colors(
+                        activeTrackColor = Color.Transparent,
+                        inactiveTrackColor = Color.Transparent,
+                        disabledActiveTrackColor = Color.Transparent,
+                        disabledInactiveTrackColor = Color.Transparent,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             Row(Modifier.fillMaxWidth()) {
                 val shownPos = dragging?.let { (it * duration).toLong() } ?: pos
                 Text(formatTime(shownPos), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
