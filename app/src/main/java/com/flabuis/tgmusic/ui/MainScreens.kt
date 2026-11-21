@@ -858,7 +858,7 @@ private fun NowPlayingScreen(onClose: () -> Unit, onLyrics: () -> Unit) {
             LiveBackground(
                 colors = palette,
                 base = MaterialTheme.colorScheme.background,
-                intensity = 0.55f,
+                intensity = 0.85f,
                 playing = s.isPlaying,
             )
         }
@@ -940,29 +940,46 @@ private fun NowPlayingScreen(onClose: () -> Unit, onLyrics: () -> Unit) {
                 Text(formatTime(s.durationMs), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(16.dp))
-            // Connected button group: prev / PLAY / next, same height, small gaps.
+            // Glass button group: prev / PLAY / next. They light up with the bass.
+            val beat by rememberBeat(s.isPlaying)
+            val dark = isAppInDarkTheme()
+            val ink = if (dark) Color.White else Color.Black
+            val glow = palette.firstOrNull() ?: MaterialTheme.colorScheme.primary
+            val playCorner by animateDpAsState(if (s.isPlaying) 24.dp else 40.dp, spring(dampingRatio = 0.45f, stiffness = 500f), label = "glassPlay")
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                FilledTonalIconButton(
+                GlassButton(
                     onClick = PlayerConnection::previous,
-                    shapes = IconButtonDefaults.shapes(
-                        RoundedCornerShape(topStart = 36.dp, bottomStart = 36.dp, topEnd = 16.dp, bottomEnd = 16.dp),
-                        RoundedCornerShape(12.dp),
-                    ),
+                    beat = beat, glow = glow, dark = dark,
+                    start = 36.dp, end = 16.dp,
                     modifier = Modifier.weight(1f).height(80.dp),
-                ) { Icon(AppIcons.Previous, "Назад", Modifier.size(32.dp)) }
-                BigPlayButton(s.isPlaying, s.isBuffering, Modifier.weight(1.5f).height(80.dp))
-                FilledTonalIconButton(
+                ) { Icon(AppIcons.Previous, "Назад", Modifier.size(32.dp), tint = ink) }
+                GlassButton(
+                    onClick = { PlayerConnection.togglePlay() },
+                    beat = beat, glow = glow, dark = dark, strong = true,
+                    start = playCorner, end = playCorner,
+                    modifier = Modifier.weight(1.5f).height(80.dp),
+                ) {
+                    if (s.isBuffering && !s.isPlaying) {
+                        LoadingIndicator(Modifier.size(48.dp), color = ink)
+                    } else {
+                        Icon(
+                            if (s.isPlaying) AppIcons.Pause else AppIcons.Play,
+                            if (s.isPlaying) "Пауза" else "Играть",
+                            Modifier.size(40.dp),
+                            tint = ink,
+                        )
+                    }
+                }
+                GlassButton(
                     onClick = PlayerConnection::next,
-                    shapes = IconButtonDefaults.shapes(
-                        RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp, topEnd = 36.dp, bottomEnd = 36.dp),
-                        RoundedCornerShape(12.dp),
-                    ),
+                    beat = beat, glow = glow, dark = dark,
+                    start = 16.dp, end = 36.dp,
                     modifier = Modifier.weight(1f).height(80.dp),
-                ) { Icon(AppIcons.Next, "Дальше", Modifier.size(32.dp)) }
+                ) { Icon(AppIcons.Next, "Дальше", Modifier.size(32.dp), tint = ink) }
             }
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

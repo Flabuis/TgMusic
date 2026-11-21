@@ -64,6 +64,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -123,7 +124,8 @@ fun LyricsScreen(onClose: () -> Unit) {
 
     val live by Settings.liveBackground.collectAsState()
     val palette = rememberCoverPalette(s.coverLarge ?: s.coverSmall, listOf(bg))
-    if (live) LiveBackground(colors = palette, base = bg, intensity = 0.65f, playing = s.isPlaying)
+    // Darker base so the glowing blobs stand out, like the player screen.
+    if (live) LiveBackground(colors = palette, base = lerp(bg, Color.Black, 0.45f), intensity = 1f, playing = s.isPlaying)
     Column(Modifier.fillMaxSize().background(if (live) Color.Transparent else bg)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onClose, shapes = IconButtonDefaults.shapes()) {
