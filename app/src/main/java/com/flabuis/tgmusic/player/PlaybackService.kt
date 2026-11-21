@@ -79,10 +79,13 @@ class PlaybackService : MediaSessionService() {
     /** Puts the album cover into the notification / lock screen once it's downloaded. */
     private fun loadArtwork(player: ExoPlayer, item: MediaItem) {
         if (item.mediaMetadata.artworkUri != null) return
-        val cover = item.mediaMetadata.extras?.getInt(EXTRA_COVER_LARGE) ?: 0
-        if (cover == 0) return
+        val large = item.mediaMetadata.extras?.getInt(EXTRA_COVER_LARGE) ?: 0
+        val small = item.mediaMetadata.extras?.getInt(EXTRA_COVER_SMALL) ?: 0
+        if (large == 0 && small == 0) return
         scope.launch {
-            val path = try { ImageCache.path(cover) } catch (e: Exception) { null } ?: return@launch
+            val path = listOf(large, small).filter { it != 0 }.distinct().firstNotNullOfOrNull { id ->
+                try { ImageCache.path(id) } catch (e: Exception) { null }
+            } ?: return@launch
             for (i in 0 until player.mediaItemCount) {
                 val current = player.getMediaItemAt(i)
                 if (current.mediaId == item.mediaId) {

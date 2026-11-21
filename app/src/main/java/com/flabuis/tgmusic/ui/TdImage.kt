@@ -65,15 +65,24 @@ fun TdImage(
     mini: ByteArray?,
     modifier: Modifier = Modifier,
     maxPx: Int = 720,
+    /** Smaller picture to show while [fileId] loads, or if it can't be downloaded. */
+    fallbackId: Int? = null,
     placeholder: @Composable () -> Unit,
 ) {
-    var bitmap by remember(fileId) { mutableStateOf(fileId?.let { ImageCache.peek(it) }) }
+    var bitmap by remember(fileId, fallbackId) {
+        mutableStateOf(fileId?.let { ImageCache.peek(it) } ?: fallbackId?.let { ImageCache.peek(it) })
+    }
     val preview = remember(mini) {
         mini?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() }
     }
-    LaunchedEffect(fileId) {
-        if (fileId != null && bitmap == null) {
-            bitmap = try { ImageCache.load(fileId, maxPx) } catch (e: Exception) { null }
+    LaunchedEffect(fileId, fallbackId) {
+        if (fileId != null && ImageCache.peek(fileId) != null) return@LaunchedEffect
+        if (fallbackId != null && fallbackId != fileId && bitmap == null) {
+            bitmap = try { ImageCache.load(fallbackId, maxPx) } catch (e: Exception) { null }
+        }
+        if (fileId != null) {
+            val big = try { ImageCache.load(fileId, maxPx) } catch (e: Exception) { null }
+            if (big != null) bitmap = big
         }
     }
     Box(modifier) {

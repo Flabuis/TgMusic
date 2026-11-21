@@ -134,6 +134,8 @@ class TgDataSource : BaseDataSource(/* isNetwork = */ true) {
             if (opened) {
                 opened = false
                 transferEnded()
+                // Keep downloading the rest quietly, so next time the track plays from the phone.
+                if (fileId != 0) Td.sendAsync(TdApi.DownloadFile(fileId, 1, 0, 0, false))
             }
         }
     }

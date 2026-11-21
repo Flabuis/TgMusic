@@ -14,6 +14,15 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.material3.ripple
+import androidx.compose.ui.input.pointer.pointerInput
+import com.flabuis.tgmusic.data.Downloads
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,8 +69,6 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.toShape
@@ -106,6 +113,7 @@ private sealed interface Screen {
     data object Picker : Screen
     data class Playlist(val channel: Channel) : Screen
     data object NowPlaying : Screen
+    data object Settings : Screen
 }
 
 @Composable
@@ -138,10 +146,15 @@ fun MainApp() {
             label = "screen",
         ) { screen ->
             when (screen) {
-                Screen.Home -> HomeScreen(onOpen = { push(Screen.Playlist(it)) }, onPick = { push(Screen.Picker) })
+                Screen.Home -> HomeScreen(
+                    onOpen = { push(Screen.Playlist(it)) },
+                    onPick = { push(Screen.Picker) },
+                    onSettings = { push(Screen.Settings) },
+                )
                 Screen.Picker -> PickerScreen(onDone = pop)
                 is Screen.Playlist -> PlaylistScreen(screen.channel, onBack = pop)
                 Screen.NowPlaying -> NowPlayingScreen(onClose = pop)
+                Screen.Settings -> SettingsScreen(onBack = pop)
             }
         }
         if (current != Screen.NowPlaying) MiniPlayer(onOpen = { push(Screen.NowPlaying) })
@@ -166,7 +179,7 @@ private fun avatarShape(index: Int): Shape = avatarShapes[Math.floorMod(index, a
 // ---------- Home ----------
 
 @Composable
-private fun HomeScreen(onOpen: (Channel) -> Unit, onPick: () -> Unit) {
+private fun HomeScreen(onOpen: (Channel) -> Unit, onPick: () -> Unit, onSettings: () -> Unit) {
     val channels by Library.selected.collectAsState()
     val scope = rememberCoroutineScope()
     var menu by remember { mutableStateOf(false) }
@@ -185,6 +198,7 @@ private fun HomeScreen(onOpen: (Channel) -> Unit, onPick: () -> Unit) {
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text("Выбрать чаты с музыкой") }, onClick = { menu = false; onPick() })
+                        DropdownMenuItem(text = { Text("Настройки") }, onClick = { menu = false; onSettings() })
                         DropdownMenuItem(text = { Text("Выйти из аккаунта") }, onClick = {
                             menu = false
                             PlayerConnection.stop()
@@ -518,7 +532,7 @@ private fun PlaylistHeader(channel: Channel, shown: List<Track>, loading: Boolea
             ) {
                 Icon(AppIcons.Play, null)
                 Spacer(Modifier.width(6.dp))
-                Text("Слушать", style = MaterialTheme.typography.titleMediumEmphasized)
+                Text("Слушать", style = MaterialTheme.typography.titleMediumEmphasized, maxLines = 1)
             }
             Button(
                 onClick = { if (shown.isNotEmpty()) PlayerConnection.playQueue(shown, shown.indices.random(), shuffle = true) },
@@ -528,7 +542,7 @@ private fun PlaylistHeader(channel: Channel, shown: List<Track>, loading: Boolea
             ) {
                 Icon(AppIcons.Shuffle, null)
                 Spacer(Modifier.width(6.dp))
-                Text("Вперемешку", style = MaterialTheme.typography.titleMediumEmphasized)
+                Text("Случайно", style = MaterialTheme.typography.titleMediumEmphasized, maxLines = 1)
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -550,7 +564,7 @@ private fun TrackRow(
     ) {
         val coverShape = if (isCurrent) MaterialShapes.Cookie9Sided.toShape() else RoundedCornerShape(14.dp)
         Box(Modifier.size(56.dp), contentAlignment = Alignment.Center) {
-            TdImage(track.coverSmall, track.mini, Modifier.fillMaxSize().clip(coverShape), maxPx = 200) {
+            TdImage(track.coverSmall, track.mini, Modifier.fillMaxSize().clip(coverShape)) {
                 LetterCover(track.title, Modifier.fillMaxSize(), small = true)
             }
             if (isCurrent) {
@@ -578,6 +592,16 @@ private fun TrackRow(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+        val downloaded by Downloads.done.collectAsState()
+        LaunchedEffect(track.fileId) { Downloads.check(track.fileId) }
+        if (track.fileId in downloaded) {
+            Icon(
+                AppIcons.Saved, "Скачан",
+                Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.width(8.dp))
         }
         if (track.duration > 0) {
             Text(
@@ -618,7 +642,7 @@ private fun MiniPlayer(onOpen: () -> Unit) {
     ) {
         Column(Modifier.clickable(onClick = onOpen).padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TdImage(s.coverSmall, null, Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)), maxPx = 200) {
+                TdImage(s.coverSmall, null, Modifier.size(48.dp).clip(RoundedCornerShape(14.dp))) {
                     LetterCover(s.title, Modifier.fillMaxSize(), small = true)
                 }
                 Spacer(Modifier.width(12.dp))
@@ -715,7 +739,7 @@ private fun NowPlayingScreen(onClose: () -> Unit) {
                     .scale(coverScale),
             ) {
                 Surface(shape = RoundedCornerShape(coverCorner), shadowElevation = 16.dp, modifier = Modifier.fillMaxSize()) {
-                    TdImage(s.coverLarge ?: s.coverSmall, null, Modifier.fillMaxSize(), maxPx = 1080) {
+                    TdImage(s.coverLarge, null, Modifier.fillMaxSize(), maxPx = 1080, fallbackId = s.coverSmall) {
                         LetterCover(s.title, Modifier.fillMaxSize())
                     }
                 }
@@ -738,30 +762,16 @@ private fun NowPlayingScreen(onClose: () -> Unit) {
 
             val duration = s.durationMs.coerceAtLeast(1)
             val value = dragging ?: (pos.toFloat() / duration).coerceIn(0f, 1f)
-            // Wavy line under an invisible-track slider: looks like Android 16's media seekbar.
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                LinearWavyProgressIndicator(
-                    progress = { value },
-                    amplitude = { if (s.isPlaying && dragging == null) 1f else 0f },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                )
-                Slider(
-                    value = value,
-                    onValueChange = { dragging = it },
-                    onValueChangeFinished = {
-                        dragging?.let { PlayerConnection.seekTo((it * duration).toLong()) }
-                        dragging = null
-                    },
-                    enabled = s.durationMs > 0,
-                    colors = SliderDefaults.colors(
-                        activeTrackColor = Color.Transparent,
-                        inactiveTrackColor = Color.Transparent,
-                        disabledActiveTrackColor = Color.Transparent,
-                        disabledInactiveTrackColor = Color.Transparent,
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+            WavySeekBar(
+                value = value,
+                playing = s.isPlaying,
+                enabled = s.durationMs > 0,
+                onDrag = { dragging = it },
+                onDragEnd = {
+                    dragging?.let { PlayerConnection.seekTo((it * duration).toLong()) }
+                    dragging = null
+                },
+            )
             Row(Modifier.fillMaxWidth()) {
                 val shownPos = dragging?.let { (it * duration).toLong() } ?: pos
                 Text(formatTime(shownPos), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -769,23 +779,33 @@ private fun NowPlayingScreen(onClose: () -> Unit) {
                 Text(formatTime(s.durationMs), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.height(16.dp))
+            // Connected button group: prev / PLAY / next, same height, small gaps.
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ToggleIcon(AppIcons.Shuffle, "Перемешать", s.shuffle, PlayerConnection::toggleShuffle)
                 FilledTonalIconButton(
                     onClick = PlayerConnection::previous,
-                    shapes = IconButtonDefaults.shapes(),
-                    modifier = Modifier.size(64.dp),
+                    shapes = IconButtonDefaults.shapes(
+                        RoundedCornerShape(topStart = 36.dp, bottomStart = 36.dp, topEnd = 16.dp, bottomEnd = 16.dp),
+                        RoundedCornerShape(12.dp),
+                    ),
+                    modifier = Modifier.weight(1f).height(80.dp),
                 ) { Icon(AppIcons.Previous, "Назад", Modifier.size(32.dp)) }
-                PlayPauseButton(s.isPlaying, s.isBuffering, size = 96)
+                BigPlayButton(s.isPlaying, s.isBuffering, Modifier.weight(1.5f).height(80.dp))
                 FilledTonalIconButton(
                     onClick = PlayerConnection::next,
-                    shapes = IconButtonDefaults.shapes(),
-                    modifier = Modifier.size(64.dp),
+                    shapes = IconButtonDefaults.shapes(
+                        RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp, topEnd = 36.dp, bottomEnd = 36.dp),
+                        RoundedCornerShape(12.dp),
+                    ),
+                    modifier = Modifier.weight(1f).height(80.dp),
                 ) { Icon(AppIcons.Next, "Дальше", Modifier.size(32.dp)) }
+            }
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                ToggleIcon(AppIcons.Shuffle, "Перемешать", s.shuffle, PlayerConnection::toggleShuffle)
                 ToggleIcon(
                     if (s.repeatMode == Player.REPEAT_MODE_ONE) AppIcons.RepeatOne else AppIcons.Repeat,
                     "Повтор",
@@ -795,6 +815,86 @@ private fun NowPlayingScreen(onClose: () -> Unit) {
             }
             Spacer(Modifier.height(32.dp))
         }
+    }
+}
+
+/** Wide play button: pill when paused, squarer when playing, squishes when pressed. */
+@Composable
+private fun BigPlayButton(isPlaying: Boolean, isBuffering: Boolean, modifier: Modifier) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val corner by animateDpAsState(
+        when {
+            pressed -> 14.dp
+            isPlaying -> 24.dp
+            else -> 40.dp
+        },
+        spring(dampingRatio = 0.45f, stiffness = 500f),
+        label = "bigPlayCorner",
+    )
+    Box(
+        modifier.clip(RoundedCornerShape(corner))
+            .background(MaterialTheme.colorScheme.primary)
+            .clickable(interactionSource = interaction, indication = ripple()) { PlayerConnection.togglePlay() },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (isBuffering && !isPlaying) {
+            LoadingIndicator(Modifier.size(48.dp), color = MaterialTheme.colorScheme.onPrimary)
+        } else {
+            Icon(
+                if (isPlaying) AppIcons.Pause else AppIcons.Play,
+                if (isPlaying) "Пауза" else "Играть",
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(40.dp),
+            )
+        }
+    }
+}
+
+/** Wavy progress line with a thumb exactly at the playback position; tap or drag to seek. */
+@Composable
+private fun WavySeekBar(
+    value: Float,
+    playing: Boolean,
+    enabled: Boolean,
+    onDrag: (Float) -> Unit,
+    onDragEnd: () -> Unit,
+) {
+    val thumbColor = MaterialTheme.colorScheme.primary
+    BoxWithConstraints(
+        Modifier.fillMaxWidth().height(44.dp)
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                detectTapGestures { offset ->
+                    onDrag((offset.x / size.width).coerceIn(0f, 1f))
+                    onDragEnd()
+                }
+            }
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                detectHorizontalDragGestures(
+                    onDragStart = { offset -> onDrag((offset.x / size.width).coerceIn(0f, 1f)) },
+                    onDragEnd = onDragEnd,
+                    onDragCancel = onDragEnd,
+                ) { change, _ ->
+                    change.consume()
+                    onDrag((change.position.x / size.width).coerceIn(0f, 1f))
+                }
+            },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        val thumbWidth = 4.dp
+        LinearWavyProgressIndicator(
+            progress = { value },
+            amplitude = { if (playing) 1f else 0f },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Box(
+            Modifier.offset(x = (maxWidth * value - thumbWidth / 2).coerceIn(0.dp, maxWidth - thumbWidth))
+                .size(thumbWidth, 28.dp)
+                .clip(CircleShape)
+                .background(thumbColor)
+        )
     }
 }
 
