@@ -204,15 +204,14 @@ object AnimeBot {
                 }.let { flow ->
                     var found: BotMessage? = null
                     flow.first { ev ->
-                        val id = when (ev) {
-                            is TdApi.UpdateNewMessage -> ev.message.id
-                            is TdApi.UpdateMessageContent -> ev.messageId
-                            is TdApi.UpdateMessageEdited -> ev.messageId
-                            else -> 0L
+                        // New messages come complete; for edits TDLib already has the new state.
+                        // No waiting here: every pause adds up when the bot sends several updates.
+                        val msg = when (ev) {
+                            is TdApi.UpdateNewMessage -> parse(ev.message)
+                            is TdApi.UpdateMessageContent -> try { message(ev.messageId) } catch (e: Exception) { null }
+                            is TdApi.UpdateMessageEdited -> try { message(ev.messageId) } catch (e: Exception) { null }
+                            else -> null
                         }
-                        // Content and buttons can arrive as separate updates: let both land, then read it whole.
-                        delay(350)
-                        val msg = try { message(id) } catch (e: Exception) { null }
                         if (msg != null) lastRaw = msg
                         if (msg != null && accept(msg)) { found = msg; true } else false
                     }

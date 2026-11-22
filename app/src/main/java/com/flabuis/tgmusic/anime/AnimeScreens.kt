@@ -80,6 +80,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
@@ -417,6 +418,12 @@ fun AnimeVideoScreen(
     val player = remember {
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(ProgressiveMediaSource.Factory(TgDataSource.Factory()))
+            // start after ~0.7 s of video instead of the default 2.5 s
+            .setLoadControl(
+                DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(5_000, 30_000, 700, 1_500)
+                    .build()
+            )
             .build()
     }
 
@@ -501,6 +508,14 @@ fun AnimeVideoScreen(
             error = e.message
         }
         busy = null
+    }
+
+    // The video may arrive a moment before its buttons: re-read the message shortly after.
+    LaunchedEffect(state?.msg?.id, state?.video?.video?.id) {
+        val st = state ?: return@LaunchedEffect
+        delay(700)
+        val fresh = try { AnimeBot.message(st.msg.id) } catch (e: Exception) { null } ?: return@LaunchedEffect
+        if (fresh.video?.video?.id == st.video?.video?.id && state === st) state = EpisodeState(fresh)
     }
 
     // New video from the bot -> play it.
